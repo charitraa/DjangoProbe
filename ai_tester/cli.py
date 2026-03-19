@@ -10,7 +10,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ai_tester.models import InputType, ProjectSource
 
-# ── will be implemented in later modules ──────────────────────
 from ai_tester import repo_handler
 from ai_tester import endpoint_scanner
 from ai_tester import test_generator
@@ -22,10 +21,7 @@ app     = typer.Typer(help="AI-powered Django API test runner")
 console = Console()
 
 
-# ─────────────────────────────────────────────
 #  INPUT TYPE DETECTION
-# ─────────────────────────────────────────────
-
 def detect_input_type(source: str) -> InputType:
     """Detect whether the source is a git URL, SSH URL, or local path."""
 
@@ -50,9 +46,7 @@ def detect_input_type(source: str) -> InputType:
     )
 
 
-# ─────────────────────────────────────────────
-#  VALIDATORS
-# ─────────────────────────────────────────────
+# VALIDATORS
 
 KNOWN_GIT_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"]
 
@@ -121,9 +115,7 @@ def validate_local_path(path_str: str) -> None:
     console.print(f"[green]✓ Django project confirmed:[/green] {path}")
 
 
-# ─────────────────────────────────────────────
 #  MAIN COMMAND
-# ─────────────────────────────────────────────
 
 @app.command()
 def analyze(
@@ -147,14 +139,14 @@ def analyze(
         help="Show detailed logs"
     ),
 ):
-    # ── Banner ────────────────────────────────
+    #Banner
     console.print(Panel(
         "[bold cyan]AI Django API Tester[/bold cyan]\n"
         "[dim]Intelligent endpoint testing for Django projects[/dim]",
         border_style="cyan"
     ))
 
-    # ── Step 1: Detect input type ─────────────
+    #Step 1: Detect input type
     console.print(f"\n[bold]→ Analyzing input:[/bold] {source}")
     try:
         input_type = detect_input_type(source)
@@ -164,7 +156,7 @@ def analyze(
 
     console.print(f"  [dim]Detected type:[/dim] [cyan]{input_type.value}[/cyan]")
 
-    # ── Step 2: Validate ──────────────────────
+    # Step 2: Validate
     console.print("\n[bold]→ Validating source...[/bold]")
     if input_type == InputType.GIT_URL:
         validate_git_url(source)
@@ -173,10 +165,10 @@ def analyze(
     elif input_type == InputType.LOCAL:
         validate_local_path(source)
 
-    # ── Build ProjectSource object ────────────
+    #Build ProjectSource object
     project = ProjectSource(raw_input=source, input_type=input_type)
 
-    # ── Step 3 onwards: Orchestrate modules ──
+    #Step 3 onwards: Orchestrate modules
     # (Each module will be implemented step by step)
     with Progress(
         SpinnerColumn(),
@@ -214,9 +206,7 @@ def analyze(
     report.print_report(results, output_path=output)
 
 
-# ─────────────────────────────────────────────
 #  Entry point
-# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     app()
