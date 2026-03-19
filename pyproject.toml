@@ -1,9 +1,9 @@
 [build-system]
 requires = ["setuptools", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "DjangoProbe"
+name = "djangoprobe"
 version = "0.1.0"
 description = "AI-powered Django API test runner"
 requires-python = ">=3.10"
@@ -14,38 +14,4 @@ dependencies = [
 ]
 
 [project.scripts]
-ai-test-runner = "ai_tester.cli:app"
-```
-
-> The last line is key — it makes `ai-test-runner` a real terminal command after install.
-
----
-
-### `requirements.txt`
-```
-typer
-rich
-gitpython
-```
-
----
-
-### Folder structure to create now
-```
-DjangoProbe/
-│
-├── ai_tester/
-│   ├── __init__.py          ← empty for now
-│   ├── cli.py               ← Module 1 (building now)
-│   ├── repo_handler.py      ← empty stub
-│   ├── endpoint_scanner.py  ← empty stub
-│   ├── test_generator.py    ← empty stub
-│   ├── test_runner.py       ← empty stub
-│   ├── report.py            ← empty stub
-│   └── ai_helper.py         ← empty stub
-│
-├── tests/
-│   └── __init__.py
-│
-├── pyproject.toml
-└── requirements.txt
+djangoprobe = "ai_tester.cli:app"
