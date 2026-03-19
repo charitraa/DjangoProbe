@@ -1,4 +1,4 @@
-# AI Test Runner — Phase 0 Blueprint
+# AI Test Runner — Blueprint
 
 ## Input Modes
 
@@ -191,19 +191,3 @@ ai-django-tester/
 ```
 
 ---
-
-## Phase Roadmap
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| Phase 0 | Blueprint | ✅ Done |
-| Phase 1 | Module 1: CLI + Input Detection (3 modes) | ⬜ |
-| Phase 2 | Module 2: Repo Handler | ⬜ |
-| Phase 2a | &nbsp;&nbsp;&nbsp;&nbsp;Git URL cloner | ⬜ |
-| Phase 2b | &nbsp;&nbsp;&nbsp;&nbsp;Local path resolver | ⬜ |
-| Phase 3 | Module 3: Endpoint Scanner | ⬜ |
-| Phase 4 | Module 4: Test Generator | ⬜ |
-| Phase 5 | Module 5: Test Runner | ⬜ |
-| Phase 6 | Module 6: Report | ⬜ |
-| Phase 7 | Module 7: AI Layer | ⬜ |
-| Phase 8 | Polish (export, CI/CD, parallel) | ⬜ |
