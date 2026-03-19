@@ -1,7 +1,5 @@
-import sys
 import re
 from pathlib import Path
-from enum import Enum
 
 import typer
 from rich.console import Console
@@ -9,113 +7,104 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ai_tester.models import InputType, ProjectSource
-
-from ai_tester import repo_handler
-from ai_tester import endpoint_scanner
-from ai_tester import test_generator
-from ai_tester import test_runner
-from ai_tester import report
-# ──────────────────────────────────────────────────────────────
+from ai_tester.repo_handler      import RepoHandler
+from ai_tester.endpoint_scanner  import EndpointScanner
+from ai_tester.test_generator    import TestGenerator
+from ai_tester.test_runner       import TestRunner
+from ai_tester.report            import ReportGenerator
 
 app     = typer.Typer(help="AI-powered Django API test runner")
 console = Console()
 
 
-#  INPUT TYPE DETECTION
-def detect_input_type(source: str) -> InputType:
-    """Detect whether the source is a git URL, SSH URL, or local path."""
+# ─────────────────────────────────────────────
+#  INPUT DETECTOR CLASS
+# ─────────────────────────────────────────────
 
-    if source.startswith("git@"):
-        return InputType.SSH_URL
+class InputDetector:
+    """Detects and validates user input type."""
 
-    if source.startswith("http://") or source.startswith("https://"):
-        return InputType.GIT_URL
+    KNOWN_GIT_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"]
 
-    if (
-        source.startswith("/")
-        or source.startswith("./")
-        or source.startswith("~/")
-        or source.startswith("~\\")
-        or Path(source).exists()  # catches relative paths like "my-project"
-    ):
-        return InputType.LOCAL
+    def __init__(self, source: str):
+        self.source = source
 
-    raise typer.BadParameter(
-        f"Cannot detect input type for: '{source}'\n"
-        "  Expected: a GitHub/GitLab URL, SSH git URL, or a local folder path."
-    )
+    def detect(self) -> InputType:
+        if self.source.startswith("git@"):
+            return InputType.SSH_URL
 
+        if self.source.startswith(("http://", "https://")):
+            return InputType.GIT_URL
 
-# VALIDATORS
+        if (
+            self.source.startswith(("/", "./", "~/", "~\\"))
+            or Path(self.source).exists()
+        ):
+            return InputType.LOCAL
 
-KNOWN_GIT_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"]
-
-def validate_git_url(url: str) -> None:
-    """Validate a remote HTTP/HTTPS git URL."""
-
-    # Must be a plausible URL
-    pattern = re.compile(
-        r"^https?://"           # http or https
-        r"[\w.\-]+"             # host (e.g. github.com)
-        r"(/[\w.\-~%+]+)+"      # path segments
-        r"(\.git)?$"            # optional .git suffix
-    )
-    if not pattern.match(url):
-        console.print(
-            f"[red]✗ Invalid URL format:[/red] {url}"
-        )
-        raise typer.Exit(code=1)
-
-    # Warn if not a known git host (but don't block — could be self-hosted)
-    if not any(host in url for host in KNOWN_GIT_HOSTS):
-        console.print(
-            f"[yellow]⚠ Warning:[/yellow] '{url}' is not a known git host "
-            f"(GitHub / GitLab / Bitbucket). Proceeding anyway..."
+        raise typer.BadParameter(
+            f"Cannot detect input type for: '{self.source}'\n"
+            "  Expected: a GitHub/GitLab URL, SSH git URL, or a local folder path."
         )
 
+    def validate(self, input_type: InputType) -> None:
+        if input_type == InputType.GIT_URL:
+            self._validate_git_url()
+        elif input_type == InputType.SSH_URL:
+            self._validate_ssh_url()
+        elif input_type == InputType.LOCAL:
+            self._validate_local_path()
 
-def validate_ssh_url(url: str) -> None:
-    """Validate SSH git URLs like git@github.com:user/repo.git"""
-
-    pattern = re.compile(r"^git@[\w.\-]+:[\w.\-]+/[\w.\-]+(\.git)?$")
-    if not pattern.match(url):
-        console.print(
-            f"[red]✗ Invalid SSH URL:[/red] {url}\n"
-            "  Expected format: git@github.com:username/repo.git"
+    def _validate_git_url(self) -> None:
+        pattern = re.compile(
+            r"^https?://"
+            r"[\w.\-]+"
+            r"(/[\w.\-~%+]+)+"
+            r"(\.git)?$"
         )
-        raise typer.Exit(code=1)
+        if not pattern.match(self.source):
+            console.print(f"[red]✗ Invalid URL format:[/red] {self.source}")
+            raise typer.Exit(code=1)
+
+        if not any(host in self.source for host in self.KNOWN_GIT_HOSTS):
+            console.print(
+                f"[yellow]⚠ Warning:[/yellow] '{self.source}' is not a known "
+                f"git host. Proceeding anyway..."
+            )
+
+    def _validate_ssh_url(self) -> None:
+        pattern = re.compile(r"^git@[\w.\-]+:[\w.\-]+/[\w.\-]+(\.git)?$")
+        if not pattern.match(self.source):
+            console.print(
+                f"[red]✗ Invalid SSH URL:[/red] {self.source}\n"
+                "  Expected format: git@github.com:username/repo.git"
+            )
+            raise typer.Exit(code=1)
+
+    def _validate_local_path(self) -> None:
+        path = Path(self.source).expanduser().resolve()
+
+        if not path.exists():
+            console.print(f"[red]✗ Path does not exist:[/red] {path}")
+            raise typer.Exit(code=1)
+
+        if not path.is_dir():
+            console.print(f"[red]✗ Path is not a folder:[/red] {path}")
+            raise typer.Exit(code=1)
+
+        if not (path / "manage.py").exists():
+            console.print(
+                f"[red]✗ No manage.py found in:[/red] {path}\n"
+                "  Make sure you're pointing to the root of a Django project."
+            )
+            raise typer.Exit(code=1)
+
+        console.print(f"[green]✓ Django project confirmed:[/green] {path}")
 
 
-def validate_local_path(path_str: str) -> None:
-    """Validate a local folder path is a Django project."""
-
-    path = Path(path_str).expanduser().resolve()
-
-    if not path.exists():
-        console.print(
-            f"[red]✗ Path does not exist:[/red] {path}"
-        )
-        raise typer.Exit(code=1)
-
-    if not path.is_dir():
-        console.print(
-            f"[red]✗ Path is not a folder:[/red] {path}"
-        )
-        raise typer.Exit(code=1)
-
-    # Check for manage.py — confirms it's a Django project
-    manage_py = path / "manage.py"
-    if not manage_py.exists():
-        console.print(
-            f"[red]✗ No manage.py found in:[/red] {path}\n"
-            "  Make sure you're pointing to the root of a Django project."
-        )
-        raise typer.Exit(code=1)
-
-    console.print(f"[green]✓ Django project confirmed:[/green] {path}")
-
-
+# ─────────────────────────────────────────────
 #  MAIN COMMAND
+# ─────────────────────────────────────────────
 
 @app.command()
 def analyze(
@@ -124,52 +113,44 @@ def analyze(
         help="GitHub URL, GitLab URL, SSH git URL, or local project path"
     ),
     ai: bool = typer.Option(
-        False,
-        "--ai",
+        False, "--ai",
         help="Enable AI-assisted test generation"
     ),
     output: str = typer.Option(
-        None,
-        "--output",
-        help="Export report to file (e.g. report.json or report.pdf)"
+        None, "--output",
+        help="Export report (e.g. report.json or report.pdf)"
     ),
     verbose: bool = typer.Option(
-        False,
-        "--verbose", "-v",
+        False, "--verbose", "-v",
         help="Show detailed logs"
     ),
 ):
-    #Banner
+    # ── Banner ────────────────────────────────
     console.print(Panel(
-        "[bold cyan]AI Django API Tester[/bold cyan]\n"
+        "[bold cyan]DjangoProbe[/bold cyan]\n"
         "[dim]Intelligent endpoint testing for Django projects[/dim]",
         border_style="cyan"
     ))
 
-    #Step 1: Detect input type
+    # ── Step 1: Detect ────────────────────────
     console.print(f"\n[bold]→ Analyzing input:[/bold] {source}")
+    detector = InputDetector(source)
+
     try:
-        input_type = detect_input_type(source)
+        input_type = detector.detect()
     except typer.BadParameter as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(code=1)
 
     console.print(f"  [dim]Detected type:[/dim] [cyan]{input_type.value}[/cyan]")
 
-    # Step 2: Validate
+    # ── Step 2: Validate ──────────────────────
     console.print("\n[bold]→ Validating source...[/bold]")
-    if input_type == InputType.GIT_URL:
-        validate_git_url(source)
-    elif input_type == InputType.SSH_URL:
-        validate_ssh_url(source)
-    elif input_type == InputType.LOCAL:
-        validate_local_path(source)
+    detector.validate(input_type)
 
-    #Build ProjectSource object
     project = ProjectSource(raw_input=source, input_type=input_type)
 
-    #Step 3 onwards: Orchestrate modules
-    # (Each module will be implemented step by step)
+    # ── Step 3+: Run Pipeline ─────────────────
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -178,35 +159,36 @@ def analyze(
 
         # Module 2 — Repo Handler
         task = progress.add_task("Cloning / resolving project...", total=None)
-        project.repo_path = repo_handler.resolve(project)
+        handler           = RepoHandler(project)
+        project.repo_path = handler.resolve()
         progress.remove_task(task)
         console.print(f"[green]✓ Project ready at:[/green] {project.repo_path}")
 
         # Module 3 — Endpoint Scanner
-        task = progress.add_task("Scanning endpoints...", total=None)
-        endpoints = endpoint_scanner.scan(project.repo_path)
+        task      = progress.add_task("Scanning endpoints...", total=None)
+        scanner   = EndpointScanner(project.repo_path)
+        endpoints = scanner.scan()
         progress.remove_task(task)
         console.print(f"[green]✓ Found {len(endpoints)} endpoint(s)[/green]")
 
         # Module 4 — Test Generator
-        task = progress.add_task("Generating test cases...", total=None)
-        test_files = test_generator.generate(
-            project.repo_path, endpoints, use_ai=ai
-        )
+        task       = progress.add_task("Generating test cases...", total=None)
+        generator  = TestGenerator(project.repo_path, endpoints, use_ai=ai)
+        test_files = generator.generate()
         progress.remove_task(task)
         console.print(f"[green]✓ Generated {len(test_files)} test file(s)[/green]")
 
         # Module 5 — Test Runner
-        task = progress.add_task("Running tests...", total=None)
-        results = test_runner.run(project.repo_path, test_files)
+        task    = progress.add_task("Running tests...", total=None)
+        runner  = TestRunner(project.repo_path, test_files)
+        results = runner.run()
         progress.remove_task(task)
-        console.print(f"[green]✓ Tests complete[/green]")
+        console.print("[green]✓ Tests complete[/green]")
 
     # Module 6 — Report
-    report.print_report(results, output_path=output)
+    report = ReportGenerator(results, output_path=output)
+    report.print()
 
-
-#  Entry point
 
 if __name__ == "__main__":
     app()
