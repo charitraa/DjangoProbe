@@ -1,10 +1,8 @@
-GitHub URL → ai-test-runner https://github.com/user/repo
-Local folder path → ai-test-runner /home/charitra/projects/my-django-app
-Git URL (non-GitHub) → ai-test-runner https://gitlab.com/user/repo or any git remote
+# AI Test Runner — Phase 0 Blueprint
 
+## Input Modes
 
-Phase 0 — Updated Project Blueprint
-Input Modes
+```
 ┌─────────────────────────────────────────────────────────┐
 │                    USER (Terminal)                      │
 │                                                         │
@@ -16,8 +14,19 @@ Input Modes
                       ▼
          CLI detects which mode it is
          and routes accordingly
+```
 
-Updated Full Architecture
+| Mode | Input Format | Example |
+|------|-------------|---------|
+| GitHub URL | `https://github.com/user/repo` | `ai-test-runner https://github.com/user/repo` |
+| Local folder | `/path/to/project` | `ai-test-runner /home/charitra/projects/my-django-app` |
+| Git URL (non-GitHub) | `https://gitlab.com/user/repo` | `ai-test-runner https://gitlab.com/user/repo` |
+
+---
+
+## Full Architecture
+
+```
 ┌──────────────────────────────────────────────────────────────┐
 │                    MODULE 1: CLI Entry Point                 │
 │                                                              │
@@ -84,9 +93,14 @@ Updated Full Architecture
 │  - Error messages + AI explanation                           │
 │  - Export to JSON / PDF (Advanced)                           │
 └──────────────────────────────────────────────────────────────┘
+```
 
-Updated Data Structures
-pythonfrom dataclasses import dataclass
+---
+
+## Data Structures
+
+```python
+from dataclasses import dataclass
 from enum import Enum
 
 class InputType(Enum):
@@ -116,9 +130,14 @@ class TestResult:
     expected_code: int
     error_message: str | None
     ai_explanation: str | None
+```
 
-Input Detection Logic (Preview)
-pythondef detect_input_type(source: str) -> InputType:
+---
+
+## Input Detection Logic
+
+```python
+def detect_input_type(source: str) -> InputType:
     if source.startswith("git@"):
         return InputType.SSH_URL
     elif source.startswith("http://") or source.startswith("https://"):
@@ -127,9 +146,14 @@ pythondef detect_input_type(source: str) -> InputType:
         return InputType.LOCAL
     else:
         raise ValueError(f"Cannot detect input type for: {source}")
+```
 
-CLI Usage Examples (All 3 Modes)
-bash# Mode 1 — GitHub URL
+---
+
+## CLI Usage Examples
+
+```bash
+# Mode 1 — GitHub URL
 $ ai-test-runner https://github.com/charitra/brilliant-sagarmatha
 
 # Mode 2 — GitLab or any Git remote
@@ -143,7 +167,8 @@ $ ai-test-runner ~/projects/lbef-portal
 
 ---
 
-### Updated Folder Structure
+## Folder Structure
+
 ```
 ai-django-tester/
 │
@@ -167,16 +192,18 @@ ai-django-tester/
 
 ---
 
-### Updated Phase Roadmap
-```
-Phase 0  → Blueprint (done ✅)
-Phase 1  → Module 1: CLI + Input Detection (3 modes)
-Phase 2  → Module 2: Repo Handler
-              ├─ 2a: Git URL cloner
-              └─ 2b: Local path resolver
-Phase 3  → Module 3: Endpoint Scanner
-Phase 4  → Module 4: Test Generator
-Phase 5  → Module 5: Test Runner
-Phase 6  → Module 6: Report
-Phase 7  → Module 7: AI Layer
-Phase 8  → Polish (export, CI/CD, parallel)
+## Phase Roadmap
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 0 | Blueprint | ✅ Done |
+| Phase 1 | Module 1: CLI + Input Detection (3 modes) | ⬜ |
+| Phase 2 | Module 2: Repo Handler | ⬜ |
+| Phase 2a | &nbsp;&nbsp;&nbsp;&nbsp;Git URL cloner | ⬜ |
+| Phase 2b | &nbsp;&nbsp;&nbsp;&nbsp;Local path resolver | ⬜ |
+| Phase 3 | Module 3: Endpoint Scanner | ⬜ |
+| Phase 4 | Module 4: Test Generator | ⬜ |
+| Phase 5 | Module 5: Test Runner | ⬜ |
+| Phase 6 | Module 6: Report | ⬜ |
+| Phase 7 | Module 7: AI Layer | ⬜ |
+| Phase 8 | Polish (export, CI/CD, parallel) | ⬜ |
