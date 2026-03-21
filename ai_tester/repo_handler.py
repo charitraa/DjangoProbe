@@ -26,13 +26,12 @@ class RepoHandler:
         repo_path = handler.resolve()
     """
 
+    # In RepoHandler.__init__
     def __init__(self, project: ProjectSource):
-        self.project    = project
-        self.cache_dir  = CACHE_DIR
+        self.project     = project
+        self.cache_dir   = CACHE_DIR
 
-    # ─────────────────────────────────────────
     #  PUBLIC — main entry
-    # ─────────────────────────────────────────
 
     def resolve(self) -> str:
         """
@@ -50,35 +49,22 @@ class RepoHandler:
                 f"Unknown input type: {self.project.input_type}"
             )
 
-    # ─────────────────────────────────────────
     #  LOCAL PATH HANDLER
-    # ─────────────────────────────────────────
 
     def _resolve_local(self) -> str:
-        """
-        Copy local Django project into cache.
-        Original is NEVER touched — we work on the copy.
-        """
-        source_path = (
-            Path(self.project.raw_input).expanduser().resolve()
-        )
-
+        source_path = Path(self.project.raw_input).expanduser().resolve()
         self._validate_django_project(source_path)
 
         folder_name = source_path.name
         cache_path  = self.cache_dir / folder_name
-
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Always fresh copy for local projects
+        # Always overwrite — no prompt
         if cache_path.exists():
-            console.print(
-                f"  [dim]Refreshing local cache for:[/dim] {folder_name}"
-            )
+            console.print(f"  [dim]Refreshing cache for:[/dim] {folder_name}")
             shutil.rmtree(cache_path)
 
         console.print("  [dim]Copying project to cache...[/dim]")
-
         try:
             shutil.copytree(
                 src    = str(source_path),
@@ -99,10 +85,7 @@ class RepoHandler:
             f"  [dim]Working copy:[/dim] {cache_path}"
         )
         return str(cache_path)
-
-    # ─────────────────────────────────────────
     #  REMOTE URL HANDLER
-    # ─────────────────────────────────────────
 
     def _resolve_remote(self) -> str:
         """
@@ -144,9 +127,7 @@ class RepoHandler:
         console.print("  [green]✓ Django project confirmed[/green]")
         return str(clone_path)
 
-    # ─────────────────────────────────────────
     #  ERROR HANDLER
-    # ─────────────────────────────────────────
 
     def _handle_clone_error(
         self,
@@ -176,9 +157,7 @@ class RepoHandler:
 
         raise SystemExit(1)
 
-    # ─────────────────────────────────────────
     #  SSH HELP MESSAGE
-    # ─────────────────────────────────────────
 
     def _show_ssh_help(self, url: str) -> None:
         """Show step-by-step SSH setup guide for private repos."""
@@ -220,9 +199,7 @@ class RepoHandler:
             border_style = "red",
         ))
 
-    # ─────────────────────────────────────────
     #  VALIDATORS
-    # ─────────────────────────────────────────
 
     def _validate_django_project(self, path: Path) -> None:
         """Ensure path exists and contains manage.py."""
@@ -242,10 +219,7 @@ class RepoHandler:
         """Check if a valid cached Django project already exists."""
         return path.exists() and (path / "manage.py").exists()
 
-    # ─────────────────────────────────────────
     #  HELPERS
-    # ─────────────────────────────────────────
-
     def _extract_repo_name(self, url: str) -> str:
         """
         Extract clean repo name from any git URL.

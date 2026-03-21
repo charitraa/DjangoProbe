@@ -7,7 +7,6 @@ from ai_tester.models import EndpointInfo
 
 console = Console()
 
-
 class EndpointScanner:
     """
     Scans a Django project and discovers all API endpoints.
@@ -25,6 +24,18 @@ class EndpointScanner:
         "IsAuthenticatedOrReadOnly",
         "DjangoModelPermissions",
     }
+    
+    SKIP_URL_PREFIXES = {
+    "admin/",
+    "admin",
+    "__debug__/",
+    "silk/",
+    "swagger/",
+    "redoc/",
+    "api-auth/",
+    "api/schema/",
+}
+
 
     def __init__(self, repo_path: str):
         self.repo_path : Path             = Path(repo_path)
@@ -101,7 +112,43 @@ class EndpointScanner:
             if not self._should_skip(candidate):
                 return candidate
         return None
+    def _get_project_apps(self) -> list[str]:
+        """
+        Read INSTALLED_APPS from settings.py.
+        Returns list of app module strings.
 
+        Example:
+            ["apps.user", "apps.gallery", "blog"]
+        """
+        settings_file = self._find_settings()
+        if not settings_file:
+            return []
+
+        try:
+            content = settings_file.read_text(errors="ignore")
+        except Exception:
+            return []
+
+        match = re.search(
+            r"INSTALLED_APPS\s*=\s*\[([^\]]*)\]",
+            content,
+            re.DOTALL,
+        )
+        if not match:
+            return []
+
+        raw_apps = re.findall(r"['\"]([^'\"]+)['\"]", match.group(1))
+
+        skip_prefixes = {
+            "django.", "rest_framework", "corsheaders",
+            "django_filters", "allauth", "channels",
+            "celery", "drf_", "debug_toolbar",
+        }
+
+        return [
+            app for app in raw_apps
+            if not any(app.startswith(p) for p in skip_prefixes)
+        ]
     def _extract_root_urlconf(self, settings_file: Path) -> str | None:
         """Extract ROOT_URLCONF value from settings.py."""
         try:
@@ -199,7 +246,15 @@ class EndpointScanner:
         if func_name in ("path", "re_path", "url"):
             pattern  = self._extract_first_arg(item) or ""
             full_url = "/" + (prefix + pattern).strip("/")
-
+        # ── Skip built-in Django routes ───────
+            if any(
+                pattern.startswith(skip)
+                for skip in self.SKIP_URL_PREFIXES
+            ):
+                console.print(
+                    f"  [dim]↷ Skipping built-in:[/dim] {full_url}"
+                )
+                return
             # Second arg is include()
             second = self._get_nth_arg(item, 1)
             if (
