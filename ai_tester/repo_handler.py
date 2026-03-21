@@ -72,7 +72,7 @@ class RepoHandler:
                 ignore = shutil.ignore_patterns(
                     "__pycache__", "*.pyc",
                     ".git", "venv", "env",
-                    ".env", "node_modules",
+                     "node_modules",
                 )
             )
         except Exception as e:

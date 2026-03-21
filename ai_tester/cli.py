@@ -166,7 +166,11 @@ def analyze(
     console.print("[green]✓ Tests complete[/green]")
 
     # ── Module 6: Report ──────────────────────
-    report = ReportGenerator(results, output_path=output)
+    report = ReportGenerator(
+    results,
+    output_path = output,
+    repo_path   = project.repo_path,
+    )
     report.print()
 
 
