@@ -22,13 +22,18 @@ class TestGenerator:
 
     def __init__(
         self,
-        repo_path: str,
-        endpoints: list[EndpointInfo],
+        repo_path:  str,
+        endpoints:  list[EndpointInfo],
+        analysis = None,   # ← ProjectAnalysis
     ):
-        self.repo_path   = Path(repo_path)
-        self.endpoints   = endpoints
-        self.output_dir  = self.repo_path / "tests" / "generated"
-        self.ai_helper   = AIHelper(str(repo_path))
+        self.repo_path  = Path(repo_path)
+        self.endpoints  = endpoints
+        self.analysis   = analysis
+        self.output_dir = self.repo_path / "tests" / "generated"  # ← ADD THIS
+        self.ai_helper  = AIHelper(
+            str(self.repo_path),
+            analysis=analysis
+        )
 
     # ─────────────────────────────────────────
     #  PUBLIC

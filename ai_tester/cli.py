@@ -10,6 +10,7 @@ from ai_tester.endpoint_scanner import EndpointScanner
 from ai_tester.test_generator import TestGenerator
 from ai_tester.test_runner import TestRunner
 from ai_tester.report import ReportGenerator
+from ai_tester.project_analyzer import ProjectAnalyzer
 
 app     = typer.Typer(help="AI-powered Django API test runner")
 console = Console()
@@ -144,11 +145,13 @@ def analyze(
         endpoints = scanner.scan()
         progress.remove_task(task)
     console.print(f"[green]✓ Found {len(endpoints)} endpoint(s)[/green]")
-
+    # ── Module 3.5: Project Analyzer ──────────────
+    analyzer = ProjectAnalyzer(project.repo_path)
+    analysis = analyzer.analyze()
     # ── Module 4: Test Generator ──────────────
     # Outside spinner — may prompt user about existing files
     console.print("\n[bold]→ Generating test cases...[/bold]")
-    generator  = TestGenerator(project.repo_path, endpoints)
+    generator  = TestGenerator(project.repo_path, endpoints, analysis)
     test_files = generator.generate()
     console.print(f"[green]✓ Generated {len(test_files)} test file(s)[/green]")
 

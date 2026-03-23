@@ -12,7 +12,7 @@ class InputType(Enum):
 class ProjectSource:
     raw_input:  str
     input_type: InputType
-    repo_path:  str = ""   # filled after repo_handler resolves it
+    repo_path:  str = ""
 
 
 @dataclass
@@ -27,8 +27,27 @@ class EndpointInfo:
 @dataclass
 class TestResult:
     endpoint:       EndpointInfo
-    status:         str            # "PASSED" | "FAILED" | "ERROR"
+    status:         str
     response_code:  int
     expected_code:  int
     error_message:  str | None = None
     ai_explanation: str | None = None
+
+
+@dataclass
+class ProjectAnalysis:
+    """
+    Result of analyzing a Django project before test generation.
+    Discovered once, reused for all apps.
+    """
+    auth_type:   str         # "JWT" | "Session" | "Token" | "Unknown"
+    login_url:   str         # /api/user/login/
+    auth_module: str         # apps.user
+    auth_app_name: str       # user
+
+    # User model fields safe to use in create_user()
+    # excludes ManyToMany fields automatically
+    safe_user_fields: list[str] = field(default_factory=list)
+
+    # Roles found in the project (if any)
+    roles: list[str] = field(default_factory=list)

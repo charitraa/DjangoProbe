@@ -6,9 +6,6 @@ from pathlib import Path
 from openai import OpenAI
 from rich.console import Console
 from dotenv import load_dotenv
-
-from ai_tester.models import EndpointInfo
-
 load_dotenv()
 console = Console()
 
@@ -37,9 +34,9 @@ class AIHelper:
 
     MAX_TOKENS = 8096
 
-    def __init__(self, repo_path: str):
+    def __init__(self, repo_path: str, analysis=None):
       self.repo_path = Path(repo_path)
-
+      self.analysis  = analysis
       # ── Load all 3 keys ───────────────────────
       self.api_keys = []
       for i in range(1, 4):
@@ -258,12 +255,11 @@ class AIHelper:
     # ─────────────────────────────────────────
 
     def _collect_context(self, app_name: str) -> dict[str, str]:
+        """
+        Dynamically read ALL relevant .py files from the app.
+        Skip: migrations, tests, admin, apps, __init__
+        """
         context: dict[str, str] = {}
-        files_to_read = [
-            "models.py", "serializers.py",
-            "views.py",  "urls.py",
-            "permissions.py", "services.py",
-        ]
 
         app_dir = self.get_app_dir(app_name)
         if not app_dir:
@@ -272,15 +268,80 @@ class AIHelper:
             )
             return context
 
-        for filename in files_to_read:
-            file_path = app_dir / filename
-            if file_path.exists():
-                content = file_path.read_text(errors="ignore")
-                context[filename] = self._truncate(content, max_chars=3000)
+        # Files to SKIP — not useful for test generation
+        skip_files = {
+            "__init__.py",
+            "admin.py",
+            "apps.py",
+            "tests.py",
+            "migrations",
+        }
+
+        # Priority files — read these first (most important)
+        priority_files = [
+            "models.py",
+            "serializers.py",
+            "views.py",
+            "urls.py",
+        ]
+
+        # Secondary files — read if they exist
+        secondary_files = [
+            "services.py",
+            "repository.py",
+            "permissions.py",
+            "filters.py",
+            "utils.py",
+            "signals.py",
+            "forms.py",
+            "tasks.py",
+        ]
+
+        def read_file(filepath: Path, label: str, max_chars: int) -> None:
+            if filepath.exists():
+                content = filepath.read_text(errors="ignore")
+                context[label] = self._truncate(content, max_chars=max_chars)
                 console.print(
-                    f"    [dim]Read:[/dim] {app_name}/{filename} "
+                    f"    [dim]Read:[/dim] {app_name}/{label} "
                     f"[dim]({len(content)} chars)[/dim]"
                 )
+
+        # Read priority files with more tokens
+        for fname in priority_files:
+            read_file(app_dir / fname, fname, max_chars=4000)
+
+        # Read secondary files with fewer tokens
+        for fname in secondary_files:
+            read_file(app_dir / fname, fname, max_chars=2000)
+
+        # Catch any OTHER .py files not in our list
+        known = set(priority_files + secondary_files + list(skip_files))
+        for py_file in sorted(app_dir.glob("*.py")):
+            if py_file.name not in known:
+                read_file(py_file, py_file.name, max_chars=1000)
+                console.print(
+                    f"    [dim]Found extra file:[/dim] {py_file.name}"
+                )
+
+        # Read auth app context (login endpoint)
+        auth_dir = self._find_auth_app()
+        if auth_dir and auth_dir != app_dir:
+            auth_app_name = auth_dir.name
+            console.print(
+                f"    [dim]Reading auth app:[/dim] {auth_app_name}/"
+            )
+            for fname in ["models.py", "serializers.py", "views.py", "urls.py"]:
+                fp = auth_dir / fname
+                if fp.exists():
+                    content = fp.read_text(errors="ignore")
+                    context[f"auth_{fname}"] = self._truncate(
+                        content, max_chars=2000
+                    )
+                    console.print(
+                        f"    [dim]Read:[/dim] {auth_app_name}/{fname} "
+                        f"[dim](auth context)[/dim]"
+                    )
+
         return context
 
     # ─────────────────────────────────────────
@@ -295,13 +356,74 @@ class AIHelper:
             "no explanation, no preamble. "
             "Code must be directly writable to a .py file and executable."
         )
+    # Add this method to AIHelper class
 
-    def _build_prompt(
-        self,
-        app_name:  str,
-        endpoints: list[EndpointInfo],
-        context:   dict[str, str],
-    ) -> str:
+    def _find_root_urls(self) -> Path | None:
+        """Find root urls.py — needed to detect login URL prefix."""
+        settings_file = self._find_settings()
+        if settings_file:
+            try:
+                content = settings_file.read_text(errors="ignore")
+                match   = re.search(
+                    r'ROOT_URLCONF\s*=\s*["\']([^"\']+)["\']', content
+                )
+                if match:
+                    url_path = self.repo_path / Path(
+                        match.group(1).replace(".", "/") + ".py"
+                    )
+                    if url_path.exists():
+                        return url_path
+            except Exception:
+                pass
+
+        # Fallback — find urls.py with most include() calls
+        best_candidate = None
+        best_score     = 0
+
+        for candidate in sorted(self.repo_path.rglob("urls.py")):
+            if self._should_skip(candidate):
+                continue
+            try:
+                content = candidate.read_text(errors="ignore")
+            except Exception:
+                continue
+            if "urlpatterns" not in content:
+                continue
+            score = content.count("include(")
+            if score > best_score:
+                best_score     = score
+                best_candidate = candidate
+
+        return best_candidate
+
+    def _build_prompt(self, app_name, endpoints, context):
+
+        if self.analysis:
+            login_url     = self.analysis.login_url
+            auth_module   = self.analysis.auth_module
+            auth_app_name = self.analysis.auth_app_name
+            safe_fields   = self.analysis.safe_user_fields
+        else:
+            # fallback if no analysis
+            auth_dir      = self._find_auth_app()
+            login_url     = self._find_login_url(auth_dir)
+            auth_module   = "apps.user"
+            auth_app_name = "user"
+            safe_fields   = ["email", "full_name"]
+
+        app_module = next(
+        (app["module"] for app in self.installed_apps
+         if app["app_name"] == app_name),
+        f"apps.{app_name}"  # fallback
+        )
+        # Build safe create_user example from safe_fields
+        safe_create = "\n        ".join([
+            f'{f} = "test_{f}@example.com",' if "email" in f
+            else f'{f} = "testpass123",' if "password" in f
+            else f'{f} = "Test User",' if "name" in f
+            else f'{f} = "test_value",'
+            for f in safe_fields[:4]  # max 4 fields
+        ])
 
         endpoint_lines = [
             f"  - [{', '.join(ep.http_methods)}]  "
@@ -317,31 +439,87 @@ class AIHelper:
         ]
 
         return f"""
-Generate a complete Django test file for the "{app_name}" app.
+        Generate a complete Django test file for the "{app_name}" app.
+        
+        ## CRITICAL — Exact import paths for THIS project:
+        - This app module path: {app_module}
+        - Import models like:      from {app_module}.models import ModelName
+        - Import from user app:    from apps.user.models import User
+        - NEVER use relative imports (no from .models import ...)
+        - NEVER import serializers — use plain dicts for POST data
+        - NEVER use status.HTTP_xxx — use plain integers: 200, 201, 400, 401
+        
+        ```python
+        # ✅ CORRECT imports:
+        from django.test import TestCase, Client
+        import json
+        from {app_module}.models import <ModelName>      # models from THIS app
+        from {auth_module}.models import User            # User model for auth
 
-## Endpoints:
-{chr(10).join(endpoint_lines)}
+        # ❌ FORBIDDEN — never use these:
+        from .models import ...          # relative imports
+        from .serializers import ...     # relative imports
+        from gallery.models import ...   # incomplete path
+        from user.models import ...      # incomplete path
+        from rest_framework import status  # use plain numbers instead
+        from {app_module}.serializers import ...  # never import serializers
+        from {app_module}.services import ...     # never import services
+        ```
+        ## Auth setup — login URL is: {login_url}
+        ## ADMIN USER SETUP — use ONLY these safe fields:
+        ## Safe fields detected from User model: {', '.join(safe_fields)}
+        ## ManyToMany fields are excluded automatically
+        
+        ```python
+        def setUp(self):
+            self.client = Client()
+            self.user = User.objects.create_user(
+                {safe_create}
+                is_staff=True,
+                is_superuser=True,
+            )
+            response = self.client.post(
+                "{login_url}",
+                data=json.dumps({{
+                    "email": "test@example.com",
+                    "password": "testpass123"
+                }}),
+                content_type="application/json"
+            )
+            token = response.json().get("data", {{}}).get("access", "")
+            self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
+        ```
+        ## Endpoints to test:
+        {chr(10).join(endpoint_lines)}
 
-## Source code:
-{chr(10).join(context_sections)}
+        ## Project context:
+        - Auth app: {auth_app_name}
+        - Login URL: {login_url}
 
-## Requirements:
-1. Header comment: app name + "Auto-generated by DjangoProbe"
-2. Class: `{app_name.capitalize()}AppTests(TestCase)`
-3. setUp: create test client, test data, auth token if needed
-   Store token as: self.auth_headers = {{"HTTP_AUTHORIZATION": "Bearer <token>"}}
-4. Per endpoint:
-   a) Success test → 200/201 with real data from serializer
-   b) Validation test → 400 for empty POST/PUT/PATCH body
-   c) Auth test → 401 without token, 200/403 with token
-   d) Wrong method → 405
-5. Path params like /api/user/<str:user_id>/: create object in setUp, use real ID
-6. Docstring per test method
-7. self.assertEqual / self.assertIn with msg= arguments
-8. All imports at top
+        ## Source code — read ALL files before writing:
+        {chr(10).join(context_sections)}
 
-Return ONLY Python code. No markdown. No explanation.
-"""
+        ## READING GUIDE:
+
+        1. READ models.py → find EXACT field names and types
+        2. READ serializers.py → find REQUIRED fields for POST/PUT
+        3. READ views.py → find permission_classes (auth needed?)
+        4. READ urls.py → find exact URL patterns and path params
+        5. READ services/repository → understand what data is processed
+        6. READ auth_models.py → find EXACT User model fields for setUp
+        7. READ auth_urls.py → find the login endpoint URL
+
+        ## TEST RULES:
+        - Use ONLY field names visible in the source code above
+        - Use ONLY model classes visible in the source code above
+        - No relative imports
+        - No APITestCase — use TestCase only
+        - No status.HTTP_xxx — use 200, 201, 400, 401, 403, 404, 405
+        - For logout: use assertIn([200, 205]) not assertEqual(200)
+        - Add msg=f"Got {{response.status_code}}: {{response.content}}" to all assertions
+
+        Return ONLY Python code. No markdown. No explanation.
+        """
 
     # ─────────────────────────────────────────
     #  HELPERS
@@ -361,3 +539,77 @@ Return ONLY Python code. No markdown. No explanation.
         if len(text) <= max_chars:
             return text
         return text[:max_chars] + "\n\n# ... (truncated)"
+    
+    def _find_auth_app(self) -> Path | None:
+        """
+        Find auth app by reading AUTH_USER_MODEL from settings.py
+        
+        AUTH_USER_MODEL = 'apps.user.User'  → apps/user/
+        AUTH_USER_MODEL = 'accounts.User'   → accounts/
+        AUTH_USER_MODEL = 'core.User'       → core/
+        """
+        settings_file = self._find_settings()
+        if not settings_file:
+            return None
+
+        content = settings_file.read_text(errors="ignore")
+
+        # Find AUTH_USER_MODEL = 'app.Model'
+        match = re.search(
+            r'AUTH_USER_MODEL\s*=\s*["\']([^"\']+)["\']',
+            content
+        )
+        if not match:
+            return None
+
+        # 'apps.user.User' → 'apps.user' → apps/user/
+        auth_model = match.group(1)          # e.g. "apps.user.User"
+        parts      = auth_model.split(".")   # ["apps", "user", "User"]
+        app_module = ".".join(parts[:-1])    # "apps.user"
+
+        return self._resolve_app_dir(app_module)
+    
+    def _find_login_url(self, auth_dir: Path | None) -> str:
+        """
+        Find login URL by reading auth app urls.py
+        Returns something like /api/user/login/
+        """
+        if not auth_dir:
+            return "/api/user/login/"
+
+        urls_file = auth_dir / "urls.py"
+        if not urls_file.exists():
+            return "/api/user/login/"
+
+        content = urls_file.read_text(errors="ignore")
+
+        # Look for login pattern
+        match = re.search(
+            r'path\(["\']([^"\']*login[^"\']*)["\']',
+            content,
+            re.IGNORECASE
+        )
+
+        if match:
+            # Get the prefix from root urls.py too
+            prefix = self._find_app_url_prefix(auth_dir.name)
+            return f"/{prefix}{match.group(1)}".replace("//", "/")
+
+        return "/api/user/login/"
+
+    def _find_app_url_prefix(self, app_name: str) -> str:
+        """Find URL prefix for an app from root urls.py"""
+        root_urls = self._find_root_urls()
+        if not root_urls:
+            return ""
+
+        content = root_urls.read_text(errors="ignore")
+
+        # path('api/user/', include('apps.user.urls'))
+        match = re.search(
+            rf'path\(["\']([^"\']+)["\'],\s*include\(["\'][^"\']*{app_name}[^"\']*["\']',
+            content
+        )
+        if match:
+            return match.group(1)
+        return ""

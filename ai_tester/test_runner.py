@@ -235,58 +235,68 @@ class TestRunner:
     # ─────────────────────────────────────────
 
     def _parse_results(self, output: str) -> list[TestResult]:
-        """
-        Parse Django test output into TestResult objects.
-
-        Django verbosity=2 output looks like:
-          test_user_login_post_success (tests.generated.test_user.UserAppTests) ... ok
-          test_user_login_post_empty_body (tests.generated.test_user.UserAppTests) ... FAIL
-          test_user_me_without_auth (tests.generated.test_user.UserAppTests) ... ERROR
-        """
+        """Parse Django --verbosity=2 output into TestResult objects."""
 
         results: list[TestResult] = []
-
-        # Print raw output summary
         self._print_raw_summary(output)
 
-        # Pattern: test_name (module.Class) ... ok/FAIL/ERROR
+        # Django verbosity=2 format:
+        # test_name (module.Class) ... ok
+        # test_name (module.Class) ... FAIL
+        # test_name (module.Class) ... ERROR
+        # test_name (module.Class) ... skipped 'reason'
+
         pattern = re.compile(
-            r"^(test\w+)\s+\([\w.]+\)\s+\.\.\.\s+(ok|FAIL|ERROR|skip)",
+            r"^(test\w+)\s+\(([^)]+)\)\s+\.\.\.\s+(ok|FAIL|ERROR|skipped.*?)$",
             re.MULTILINE | re.IGNORECASE,
         )
 
+        status_map = {
+            "OK":    "PASSED",
+            "FAIL":  "FAILED",
+            "ERROR": "ERROR",
+        }
+
         for match in pattern.finditer(output):
-            test_name = match.group(1)
-            status    = match.group(2).upper()
+            test_name   = match.group(1)
+            module_path = match.group(2)  # e.g. tests.generated.test_user.UserAppTests
+            raw_status  = match.group(3).strip().upper()
 
-            # Map Django status to our status
-            status_map = {
-                "OK":    "PASSED",
-                "FAIL":  "FAILED",
-                "ERROR": "ERROR",
-                "SKIP":  "SKIPPED",
-            }
+            # Handle "skipped 'reason'"
+            if raw_status.startswith("SKIPPED"):
+                status = "SKIPPED"
+            else:
+                status = status_map.get(raw_status, "ERROR")
 
-            # Create a minimal EndpointInfo from test name
-            # test_user_create_post_success → /user/create/
-            url_pattern = self._url_from_test_name(test_name)
+            # Extract app name from module path
+            # tests.generated.test_user.UserAppTests → user
+            app_name = ""
+            parts = module_path.split(".")
+            for part in parts:
+                if part.startswith("test_"):
+                    app_name = part.replace("test_", "")
+                    break
 
             result = TestResult(
-                endpoint      = EndpointInfo(
-                    url_pattern   = url_pattern,
+                endpoint = EndpointInfo(
+                    url_pattern   = test_name,  # use test name as identifier
                     http_methods  = [],
-                    view_name     = "",
+                    view_name     = test_name,
                     requires_auth = False,
-                    app_name      = "",
+                    app_name      = app_name,
                 ),
-                status        = status_map.get(status, "ERROR"),
+                status        = status,
                 response_code = 0,
                 expected_code = 0,
-                error_message = self._extract_error(output, test_name),
+                error_message = (
+                    self._extract_error(output, test_name)
+                    if status in ("FAILED", "ERROR")
+                    else None
+                ),
             )
             results.append(result)
 
-        # If no results parsed — return summary result
+        # Fallback if nothing parsed
         if not results:
             results.append(self._make_summary_result(output))
 
