@@ -1,7 +1,6 @@
 import ast
 import re
 from pathlib import Path
-
 from rich.console import Console
 from ai_tester.models import EndpointInfo
 
@@ -42,10 +41,7 @@ class EndpointScanner:
         self.endpoints : list[EndpointInfo] = []
         self.visited   : set[str]         = set()
 
-    # ─────────────────────────────────────────
     #  PUBLIC — main entry
-    # ─────────────────────────────────────────
-
     def scan(self) -> list[EndpointInfo]:
         """Scan all urls.py files and return discovered endpoints."""
 
@@ -65,10 +61,7 @@ class EndpointScanner:
 
         return self.endpoints
 
-    # ─────────────────────────────────────────
     #  FIND ROOT urls.py
-    # ─────────────────────────────────────────
-
     def _find_root_urls(self) -> Path | None:
         """Find the root urls.py via ROOT_URLCONF or heuristic."""
 
@@ -162,10 +155,7 @@ class EndpointScanner:
             pass
         return None
 
-    # ─────────────────────────────────────────
     #  PARSE urls.py — Recursive
-    # ─────────────────────────────────────────
-
     def _parse_urls_file(self, urls_file: Path, prefix: str) -> None:
         """
         Parse a urls.py using AST.
@@ -237,16 +227,16 @@ class EndpointScanner:
 
         func_name = self._get_call_name(item)
 
-        # ── include() ─────────────────────────
+        # include()
         if func_name in ("include", "re_path") and self._has_include(item):
             self._follow_include(item, prefix)
             return
 
-        # ── path() / re_path() / url() ────────
+        # path() / re_path() / url()
         if func_name in ("path", "re_path", "url"):
             pattern  = self._extract_first_arg(item) or ""
             full_url = "/" + (prefix + pattern).strip("/")
-        # ── Skip built-in Django routes ───────
+        #Skip built-in Django routes
             if any(
                 pattern.startswith(skip)
                 for skip in self.SKIP_URL_PREFIXES
@@ -287,10 +277,7 @@ class EndpointScanner:
             if sub_file:
                 self._parse_urls_file(sub_file, prefix)
 
-    # ─────────────────────────────────────────
     #  DRF ROUTER DETECTION
-    # ─────────────────────────────────────────
-
     def _extract_router_registrations(
         self,
         tree:      ast.Module,
@@ -346,10 +333,8 @@ class EndpointScanner:
 
         return router_map
 
-    # ─────────────────────────────────────────
-    #  VIEW INFO RESOLUTION
-    # ─────────────────────────────────────────
 
+    #  VIEW INFO RESOLUTION
     def _resolve_view_info(
         self,
         view_name: str,
@@ -431,15 +416,13 @@ class EndpointScanner:
     def _default_methods(self, view_name: str) -> list[str]:
         """Guess HTTP method from view name as fallback."""
         name = view_name.lower()
-        if "list"    in name or "detail" in name: return ["GET"]
-        if "create"  in name:                     return ["POST"]
-        if "update"  in name:                     return ["PUT", "PATCH"]
+        if "list" in name or "detail" in name: return ["GET"]
+        if "create" in name: return ["POST"]
+        if "update" in name: return ["PUT", "PATCH"]
         if "destroy" in name or "delete" in name: return ["DELETE"]
         return ["GET"]
 
-    # ─────────────────────────────────────────
     #  FILE RESOLUTION
-    # ─────────────────────────────────────────
 
     def _find_views_file(self, urls_file: Path) -> Path | None:
         """Find views.py for a given urls.py."""
@@ -500,10 +483,7 @@ class EndpointScanner:
 
         return None
 
-    # ─────────────────────────────────────────
     #  DUPLICATE CHECKER
-    # ─────────────────────────────────────────
-
     def _check_duplicates(self) -> None:
         """Warn about duplicate URL patterns."""
         seen: dict[str, str] = {}
@@ -518,10 +498,7 @@ class EndpointScanner:
             else:
                 seen[key] = ep.view_name
 
-    # ─────────────────────────────────────────
     #  AST UTILITIES
-    # ─────────────────────────────────────────
-
     def _should_skip(self, path: Path) -> bool:
         return any(p in path.parts for p in self.SKIP_DIRS)
 

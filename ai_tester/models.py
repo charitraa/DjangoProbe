@@ -40,10 +40,10 @@ class ProjectAnalysis:
     Result of analyzing a Django project before test generation.
     Discovered once, reused for all apps.
     """
-    auth_type:   str         # "JWT" | "Session" | "Token" | "Unknown"
-    login_url:   str         # /api/user/login/
-    auth_module: str         # apps.user
-    auth_app_name: str       # user
+    auth_type:   str
+    login_url:   str
+    auth_module: str
+    auth_app_name: str
 
     # User model fields safe to use in create_user()
     # excludes ManyToMany fields automatically

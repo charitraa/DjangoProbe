@@ -33,10 +33,7 @@ class TestRunner:
         self.venv_path  = self.repo_path / self.VENV_DIR
         self.python     = self._get_python_path()
 
-    # ─────────────────────────────────────────
     #  PUBLIC — main entry
-    # ─────────────────────────────────────────
-
     def run(self) -> list[TestResult]:
         """
         Run all generated tests.
@@ -68,10 +65,7 @@ class TestRunner:
 
         return results
 
-    # ─────────────────────────────────────────
     #  VENV SETUP
-    # ─────────────────────────────────────────
-
     def _setup_venv(self) -> None:
         """Create isolated venv if it doesn't exist."""
 
@@ -102,10 +96,7 @@ class TestRunner:
             return self.venv_path / "Scripts" / "python.exe"
         return self.venv_path / "bin" / "python"
 
-    # ─────────────────────────────────────────
     #  DEPENDENCY INSTALLATION
-    # ─────────────────────────────────────────
-
     def _install_dependencies(self) -> bool:
         """
         Install project dependencies into venv.
@@ -161,10 +152,7 @@ class TestRunner:
             )
             return False
 
-    # ─────────────────────────────────────────
     #  TEST EXECUTION
-    # ─────────────────────────────────────────
-
     def _run_tests(self) -> str:
 
         console.print("  [dim]Running tests...[/dim]")
@@ -215,11 +203,11 @@ class TestRunner:
                     "--verbosity=2",
                     "--keepdb",
                 ],
-                cwd            = str(self.repo_path),
+                cwd = str(self.repo_path),
                 capture_output = True,
-                text           = True,
-                timeout        = 300,
-                env            = env,
+                text = True,
+                timeout = 300,
+                env = env,
             )
 
             output = result.stderr + "\n" + result.stdout
@@ -230,10 +218,8 @@ class TestRunner:
             return "ERROR: Test run timed out after 5 minutes"
         except Exception as e:
             return f"ERROR: {e}"
-        # ─────────────────────────────────────────
-    #  RESULT PARSING
-    # ─────────────────────────────────────────
 
+    #  RESULT PARSING
     def _parse_results(self, output: str) -> list[TestResult]:
         """Parse Django --verbosity=2 output into TestResult objects."""
 
@@ -279,13 +265,13 @@ class TestRunner:
 
             result = TestResult(
                 endpoint = EndpointInfo(
-                    url_pattern   = test_name,  # use test name as identifier
+                    url_pattern  = test_name,  # use test name as identifier
                     http_methods  = [],
-                    view_name     = test_name,
+                    view_name  = test_name,
                     requires_auth = False,
-                    app_name      = app_name,
+                    app_name  = app_name,
                 ),
-                status        = status,
+                status = status,
                 response_code = 0,
                 expected_code = 0,
                 error_message = (

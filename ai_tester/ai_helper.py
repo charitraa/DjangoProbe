@@ -2,10 +2,10 @@ import os
 import re
 import time
 from pathlib import Path
-
 from openai import OpenAI
 from rich.console import Console
 from dotenv import load_dotenv
+
 load_dotenv()
 console = Console()
 
@@ -37,7 +37,7 @@ class AIHelper:
     def __init__(self, repo_path: str, analysis=None):
       self.repo_path = Path(repo_path)
       self.analysis  = analysis
-      # ── Load all 3 keys ───────────────────────
+      # Load all 3 keys
       self.api_keys = []
       for i in range(1, 4):
           key = os.environ.get(f"GROQ_API_KEY_{i}")
@@ -99,10 +99,8 @@ class AIHelper:
             f"  [cyan]↻ Rotated to key {next_index + 1}/{len(self.api_keys)}[/cyan]"
         )
         return True
-    # ─────────────────────────────────────────
+    
     #  PUBLIC
-    # ─────────────────────────────────────────
-
     def generate_tests(self, app_name, endpoints):
         console.print(
             f"  [dim]→ Groq generating tests for:[/dim] "
@@ -170,10 +168,8 @@ class AIHelper:
 
         console.print("[red]✗ All models and keys failed.[/red]")
         return None
-    # ─────────────────────────────────────────
+    
     #  INSTALLED_APPS PARSER
-    # ─────────────────────────────────────────
-
     def _parse_installed_apps(self) -> list[dict]:
         """Read INSTALLED_APPS from settings.py."""
 
@@ -250,10 +246,7 @@ class AIHelper:
                 return app["app_dir"]
         return None
 
-    # ─────────────────────────────────────────
     #  CONTEXT COLLECTOR
-    # ─────────────────────────────────────────
-
     def _collect_context(self, app_name: str) -> dict[str, str]:
         """
         Dynamically read ALL relevant .py files from the app.
@@ -344,10 +337,7 @@ class AIHelper:
 
         return context
 
-    # ─────────────────────────────────────────
     #  PROMPTS
-    # ─────────────────────────────────────────
-
     def _system_prompt(self) -> str:
         return (
             "You are an expert Django and DRF test engineer. "
@@ -356,8 +346,8 @@ class AIHelper:
             "no explanation, no preamble. "
             "Code must be directly writable to a .py file and executable."
         )
+    
     # Add this method to AIHelper class
-
     def _find_root_urls(self) -> Path | None:
         """Find root urls.py — needed to detect login URL prefix."""
         settings_file = self._find_settings()
@@ -450,13 +440,13 @@ class AIHelper:
         - NEVER use status.HTTP_xxx — use plain integers: 200, 201, 400, 401
         
         ```python
-        # ✅ CORRECT imports:
+        # CORRECT imports:
         from django.test import TestCase, Client
         import json
         from {app_module}.models import <ModelName>      # models from THIS app
         from {auth_module}.models import User            # User model for auth
 
-        # ❌ FORBIDDEN — never use these:
+        # FORBIDDEN — never use these:
         from .models import ...          # relative imports
         from .serializers import ...     # relative imports
         from gallery.models import ...   # incomplete path
@@ -521,10 +511,7 @@ class AIHelper:
         Return ONLY Python code. No markdown. No explanation.
         """
 
-    # ─────────────────────────────────────────
     #  HELPERS
-    # ─────────────────────────────────────────
-
     def _find_settings(self) -> Path | None:
         for candidate in self.repo_path.rglob("settings.py"):
             if not self._should_skip(candidate):

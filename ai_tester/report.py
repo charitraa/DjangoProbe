@@ -1,13 +1,11 @@
 import json
 from pathlib import Path
 from datetime import datetime
-
 from rich.console import Console
-from rich.panel   import Panel
-from rich.table   import Table
-from rich.text    import Text
-from rich         import box
-
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich import box
 from ai_tester.models import TestResult
 
 console = Console()
@@ -45,10 +43,7 @@ class ReportGenerator:
         self.errors  = sum(1 for r in results if r.status == "ERROR")
         self.skipped = sum(1 for r in results if r.status == "SKIPPED")
 
-    # ─────────────────────────────────────────
     #  PUBLIC — main entry
-    # ─────────────────────────────────────────
-
     def print(self) -> None:
         """Print report to terminal and export if output_path set."""
 
@@ -57,14 +52,11 @@ class ReportGenerator:
         if self.output_path:
             self._export(self.output_path)
 
-    # ─────────────────────────────────────────
     #  TERMINAL REPORT
-    # ─────────────────────────────────────────
-
     def _print_terminal(self) -> None:
         """Print beautiful terminal report using Rich."""
 
-        # ── Header ───────────────────────────
+        # Header
         project_name = (
             Path(self.repo_path).name
             if self.repo_path
@@ -79,7 +71,7 @@ class ReportGenerator:
             border_style = "cyan",
         ))
 
-        # ── Summary Table ─────────────────────
+        #Summary Table
         console.print()
         console.print("[bold]  Results Summary[/bold]")
 
@@ -108,12 +100,12 @@ class ReportGenerator:
 
         console.print(summary)
 
-        # ── Pass Rate Bar ─────────────────────
+        # Pass Rate Bar
         if self.total > 0:
             pass_rate = (self.passed / self.total) * 100
             self._print_progress_bar(pass_rate)
 
-        # ── Failed / Error Details ────────────
+        # Failed / Error Details
         bad_results = [
             r for r in self.results
             if r.status in ("FAILED", "ERROR")
@@ -148,14 +140,14 @@ class ReportGenerator:
 
             console.print(fail_table)
 
-        # ── All Passed message ────────────────
+        #All Passed message
         elif self.total > 0 and self.failed == 0 and self.errors == 0:
             console.print()
             console.print(
                 "  [bold green]🎉 All tests passed![/bold green]"
             )
 
-        # ── No results ────────────────────────
+        #No results ─
         elif self.total == 0:
             console.print()
             console.print(
@@ -163,7 +155,7 @@ class ReportGenerator:
                 "  [dim]Check that test files were generated correctly[/dim]"
             )
 
-        # ── Export hint ───────────────────────
+        # Export hint
         console.print()
         console.print(
             "  [dim]Tip: use --output report.json or "
@@ -185,10 +177,7 @@ class ReportGenerator:
             f"[bold]{percent:.1f}%[/bold]"
         )
 
-    # ─────────────────────────────────────────
     #  EXPORT
-    # ─────────────────────────────────────────
-
     def _export(self, output_path: str) -> None:
         """Export report to JSON or PDF based on file extension."""
 

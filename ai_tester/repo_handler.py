@@ -1,11 +1,9 @@
 import shutil
 import re
 from pathlib import Path
-
 from rich.console import Console
 from rich.panel import Panel
 from git import Repo, GitCommandError
-
 from ai_tester.models import ProjectSource, InputType
 
 console   = Console()
@@ -32,7 +30,6 @@ class RepoHandler:
         self.cache_dir   = CACHE_DIR
 
     #  PUBLIC — main entry
-
     def resolve(self) -> str:
         """
         Resolve project source to a local path.
@@ -50,7 +47,6 @@ class RepoHandler:
             )
 
     #  LOCAL PATH HANDLER
-
     def _resolve_local(self) -> str:
         source_path = Path(self.project.raw_input).expanduser().resolve()
         self._validate_django_project(source_path)
@@ -85,8 +81,8 @@ class RepoHandler:
             f"  [dim]Working copy:[/dim] {cache_path}"
         )
         return str(cache_path)
+    
     #  REMOTE URL HANDLER
-
     def _resolve_remote(self) -> str:
         """
         Clone a remote git repo into cache.
@@ -128,7 +124,6 @@ class RepoHandler:
         return str(clone_path)
 
     #  ERROR HANDLER
-
     def _handle_clone_error(
         self,
         error:      GitCommandError,
@@ -158,7 +153,6 @@ class RepoHandler:
         raise SystemExit(1)
 
     #  SSH HELP MESSAGE
-
     def _show_ssh_help(self, url: str) -> None:
         """Show step-by-step SSH setup guide for private repos."""
 
@@ -200,7 +194,6 @@ class RepoHandler:
         ))
 
     #  VALIDATORS
-
     def _validate_django_project(self, path: Path) -> None:
         """Ensure path exists and contains manage.py."""
 

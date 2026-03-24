@@ -27,10 +27,7 @@ class ProjectAnalyzer:
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path)
 
-    # ─────────────────────────────────────────
     #  PUBLIC
-    # ─────────────────────────────────────────
-
     def analyze(self) -> ProjectAnalysis:
         """Run full project analysis. Returns ProjectAnalysis."""
 
@@ -70,10 +67,7 @@ class ProjectAnalyzer:
             roles         = roles,
         )
 
-    # ─────────────────────────────────────────
     #  AUTH TYPE DETECTION
-    # ─────────────────────────────────────────
-
     def _detect_auth_type(self) -> str:
         """
         Detect auth type from settings.py and requirements.txt
@@ -111,10 +105,7 @@ class ProjectAnalyzer:
 
         return "JWT"  # default assumption for DRF projects
 
-    # ─────────────────────────────────────────
     #  AUTH APP FINDER
-    # ─────────────────────────────────────────
-
     def _find_auth_app(self) -> Path | None:
         """Find auth app via AUTH_USER_MODEL in settings.py"""
         settings = self._find_settings()
@@ -162,10 +153,7 @@ class ProjectAnalyzer:
         except Exception:
             return f"apps.{auth_dir.name}"
 
-    # ─────────────────────────────────────────
     #  LOGIN URL FINDER
-    # ─────────────────────────────────────────
-
     def _find_login_url(self, auth_dir: Path | None) -> str:
         """Find login URL from auth app urls.py + root urls.py prefix."""
         if not auth_dir:
@@ -202,10 +190,7 @@ class ProjectAnalyzer:
         )
         return match.group(1) if match else ""
 
-    # ─────────────────────────────────────────
     #  SAFE USER FIELDS
-    # ─────────────────────────────────────────
-
     def _get_safe_user_fields(self, auth_dir: Path | None) -> list[str]:
         """
         Read User model and return fields safe to pass to create_user().
@@ -285,10 +270,7 @@ class ProjectAnalyzer:
 
         return safe_fields or ["email", "full_name"]
 
-    # ─────────────────────────────────────────
     #  ROLES FINDER
-    # ─────────────────────────────────────────
-
     def _get_available_roles(self, auth_dir: Path | None) -> list[str]:
         """
         Find available roles from Role model if it exists.
@@ -318,10 +300,7 @@ class ProjectAnalyzer:
 
         return []
 
-    # ─────────────────────────────────────────
     #  HELPERS
-    # ─────────────────────────────────────────
-
     def _find_settings(self) -> Path | None:
         for candidate in self.repo_path.rglob("settings.py"):
             if not self._should_skip(candidate):

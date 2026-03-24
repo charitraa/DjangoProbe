@@ -12,7 +12,7 @@ from ai_tester.test_runner import TestRunner
 from ai_tester.report import ReportGenerator
 from ai_tester.project_analyzer import ProjectAnalyzer
 
-app     = typer.Typer(help="AI-powered Django API test runner")
+app = typer.Typer(help="AI-powered Django API test runner")
 console = Console()
 
 
@@ -104,14 +104,14 @@ def analyze(
         help="Show detailed logs"
     ),
 ):
-    # ── Banner ────────────────────────────────
+    #Banner
     console.print(Panel(
         "[bold cyan]DjangoProbe[/bold cyan]\n"
         "[dim]Intelligent endpoint testing for Django projects[/dim]",
         border_style="cyan"
     ))
 
-    # ── Step 1: Detect ────────────────────────
+    # Step 1: Detect
     console.print(f"\n[bold]→ Analyzing input:[/bold] {source}")
     detector = InputDetector(source)
     try:
@@ -121,19 +121,19 @@ def analyze(
         raise typer.Exit(code=1)
     console.print(f"  [dim]Detected type:[/dim] [cyan]{input_type.value}[/cyan]")
 
-    # ── Step 2: Validate ──────────────────────
+    # Step 2: Validate
     console.print("\n[bold]→ Validating source...[/bold]")
     detector.validate(input_type)
     project = ProjectSource(raw_input=source, input_type=input_type)
 
-    # ── Module 2: Repo Handler ────────────────
+    # Module 2: Repo Handler
     # Outside spinner — may prompt user about cache
     console.print("\n[bold]→ Resolving project...[/bold]")
     handler           = RepoHandler(project)
     project.repo_path = handler.resolve()
     console.print(f"[green]✓ Project ready at:[/green] {project.repo_path}")
 
-    # ── Module 3: Endpoint Scanner ────────────
+    # Module 3: Endpoint Scanner
     # Inside spinner — no prompts
     with Progress(
         SpinnerColumn(),
@@ -145,17 +145,19 @@ def analyze(
         endpoints = scanner.scan()
         progress.remove_task(task)
     console.print(f"[green]✓ Found {len(endpoints)} endpoint(s)[/green]")
-    # ── Module 3.5: Project Analyzer ──────────────
+
+    # Module 3.5: Project Analyzer
     analyzer = ProjectAnalyzer(project.repo_path)
     analysis = analyzer.analyze()
-    # ── Module 4: Test Generator ──────────────
+
+    # Module 4: Test Generator 
     # Outside spinner — may prompt user about existing files
     console.print("\n[bold]→ Generating test cases...[/bold]")
     generator  = TestGenerator(project.repo_path, endpoints, analysis)
     test_files = generator.generate()
     console.print(f"[green]✓ Generated {len(test_files)} test file(s)[/green]")
 
-    # ── Module 5: Test Runner ─────────────────
+    # Module 5: Test Runner
     # Inside spinner — no prompts
     with Progress(
         SpinnerColumn(),
@@ -168,7 +170,7 @@ def analyze(
         progress.remove_task(task)
     console.print("[green]✓ Tests complete[/green]")
 
-    # ── Module 6: Report ──────────────────────
+    #Module 6: Report
     report = ReportGenerator(
     results,
     output_path = output,
