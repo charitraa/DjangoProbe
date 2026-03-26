@@ -29,42 +29,40 @@ class ProjectAnalyzer:
 
     #  PUBLIC
     def analyze(self) -> ProjectAnalysis:
-        """Run full project analysis. Returns ProjectAnalysis."""
-
-        console.print("\n[bold]→ Analyzing project...[/bold]")
-
-        auth_type     = self._detect_auth_type()
-        auth_dir      = self._find_auth_app()
-        auth_module   = self._get_auth_module(auth_dir)
+        auth_type = self._detect_auth_type()
+        auth_dir = self._find_auth_app()
+        auth_module = self._get_auth_module(auth_dir)
         auth_app_name = auth_dir.name if auth_dir else "user"
-        login_url     = self._find_login_url(auth_dir)
-        safe_fields   = self._get_safe_user_fields(auth_dir)
-        roles         = self._get_available_roles(auth_dir)
+        login_url = self._find_login_url(auth_dir)
+        safe_fields = self._get_safe_user_fields(auth_dir)
+        fk_fields = self._get_user_fk_fields(auth_dir)
+        m2m_fields = self._get_user_m2m_fields(auth_dir)
+        roles = self._get_available_roles(auth_dir)
 
-        console.print(
-            f"  [dim]Auth type:[/dim]    [cyan]{auth_type}[/cyan]"
-        )
-        console.print(
-            f"  [dim]Auth app:[/dim]     [cyan]{auth_module}[/cyan]"
-        )
-        console.print(
-            f"  [dim]Login URL:[/dim]    [cyan]{login_url}[/cyan]"
-        )
-        console.print(
-            f"  [dim]Safe fields:[/dim]  [cyan]{', '.join(safe_fields)}[/cyan]"
-        )
-        if roles:
+        console.print(f"  [dim]Auth type:[/dim]    [cyan]{auth_type}[/cyan]")
+        console.print(f"  [dim]Auth app:[/dim]     [cyan]{auth_module}[/cyan]")
+        console.print(f"  [dim]Login URL:[/dim]    [cyan]{login_url}[/cyan]")
+        console.print(f"  [dim]Safe fields:[/dim]  [cyan]{', '.join(safe_fields)}[/cyan]")
+
+        if fk_fields:
+            fk_names = [f["field"] for f in fk_fields]
             console.print(
-                f"  [dim]Roles found:[/dim] [cyan]{', '.join(roles)}[/cyan]"
+                f"  [dim]FK fields:[/dim]    [yellow]{', '.join(fk_names)}[/yellow]"
+            )
+        if m2m_fields:
+            console.print(
+                f"  [dim]M2M fields:[/dim]   [yellow]{', '.join(m2m_fields)}[/yellow]"
             )
 
         return ProjectAnalysis(
-            auth_type     = auth_type,
-            login_url     = login_url,
-            auth_module   = auth_module,
-            auth_app_name = auth_app_name,
-            safe_user_fields = safe_fields,
-            roles         = roles,
+            auth_type=auth_type,
+            login_url=login_url,
+            auth_module=auth_module,
+            auth_app_name=auth_app_name,
+            safe_user_fields=safe_fields,
+            roles=roles,
+            user_fk_fields=fk_fields,
+            user_m2m_fields=m2m_fields,
         )
 
     #  AUTH TYPE DETECTION
@@ -190,48 +188,64 @@ class ProjectAnalyzer:
         )
         return match.group(1) if match else ""
 
-    #  SAFE USER FIELDS
     def _get_safe_user_fields(self, auth_dir: Path | None) -> list[str]:
-        """
-        Read User model and return fields safe to pass to create_user().
-        Excludes ManyToManyField and ForeignKey fields.
+        """Return ONLY simple safe fields — excludes FK and M2M."""
+        safe, _, _ = self._analyze_user_model(auth_dir)
+        return safe
 
-        Returns fields like: ['email', 'full_name', 'phone_number']
+    def _get_user_fk_fields(self, auth_dir: Path | None) -> list:
+        """Return ForeignKey field info."""
+        _, fk_fields, _ = self._analyze_user_model(auth_dir)
+        return fk_fields
+
+    def _get_user_m2m_fields(self, auth_dir: Path | None) -> list[str]:
+        """Return ManyToMany field names."""
+        _, _, m2m = self._analyze_user_model(auth_dir)
+        return m2m
+
+    def _analyze_user_model(self, auth_dir: Path | None) -> tuple:
+        """
+        Parse User model and classify all fields:
+        Returns: (safe_fields, fk_fields, m2m_fields)
+
+        safe_fields  = ["email", "full_name"]         ← pass directly to create_user
+        fk_fields    = [{"field": "role",             ← ForeignKey, create first
+                         "model": "Role",
+                         "module": "apps.user.models"}]
+        m2m_fields   = ["pages"]                      ← set after creation
         """
         if not auth_dir:
-            return ["email", "full_name"]
+            return ["email", "full_name"], [], []
 
         models_file = auth_dir / "models.py"
         if not models_file.exists():
-            return ["email", "full_name"]
+            return ["email", "full_name"], [], []
 
         try:
             source = models_file.read_text(errors="ignore")
-            tree   = ast.parse(source)
+            tree = ast.parse(source)
         except Exception:
-            return ["email", "full_name"]
+            return ["email", "full_name"], [], []
 
-        safe_fields   = []
-        unsafe_types  = {
-            "ManyToManyField",
-            "ForeignKey",
-            "OneToOneField",
-            "ManyToOneRel",
-        }
+        safe_fields = []
+        fk_fields = []
+        m2m_fields = []
+
+        m2m_types = {"ManyToManyField"}
+        fk_types = {"ForeignKey", "OneToOneField"}
+        unsafe_types = m2m_types | fk_types | {"ManyToOneRel"}
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
 
-            # Find User or AbstractUser subclasses
-            bases = [
-                ast.unparse(b) for b in node.bases
-            ]
-            is_user_model = any(
+            bases = [ast.unparse(b) for b in node.bases]
+            is_user = any(
                 "User" in b or "AbstractUser" in b or "AbstractBaseUser" in b
                 for b in bases
-            )
-            if not is_user_model and node.name != "User":
+            ) or node.name == "User"
+
+            if not is_user:
                 continue
 
             for item in node.body:
@@ -246,29 +260,80 @@ class ProjectAnalyzer:
                     if field_name.startswith("_"):
                         continue
 
-                    # Check if it's a safe field type
-                    if isinstance(item.value, ast.Call):
-                        field_type = ""
-                        if isinstance(item.value.func, ast.Name):
-                            field_type = item.value.func.id
-                        elif isinstance(item.value.func, ast.Attribute):
-                            field_type = item.value.func.attr
+                    if not isinstance(item.value, ast.Call):
+                        continue
 
-                        if field_type in unsafe_types:
-                            continue  # skip ManyToMany etc.
+                    # Get field type
+                    field_type = ""
+                    if isinstance(item.value.func, ast.Name):
+                        field_type = item.value.func.id
+                    elif isinstance(item.value.func, ast.Attribute):
+                        field_type = item.value.func.attr
 
-                        if field_type and "Field" in field_type:
-                            safe_fields.append(field_name)
+                    if not field_type:
+                        continue
 
-        # Always include these basics
-        basics = ["email", "full_name", "phone_number", "username"]
-        for b in basics:
-            if b not in safe_fields:
-                # Check if field exists in source
-                if re.search(rf'\b{b}\s*=', source):
-                    safe_fields.append(b)
+                    if field_type in m2m_types:
+                        # ManyToMany — set after creation
+                        m2m_fields.append(field_name)
 
-        return safe_fields or ["email", "full_name"]
+                    elif field_type in fk_types:
+                        # ForeignKey — need to create related object first
+                        related_model = self._get_fk_related_model(item.value)
+                        create_kwargs = self._guess_create_kwargs(
+                            related_model, source
+                        )
+                        fk_fields.append({
+                            "field": field_name,
+                            "model": related_model,
+                            "module": self._get_auth_module(auth_dir),
+                            "kwargs": create_kwargs,
+                        })
+
+                    elif "Field" in field_type:
+                        # Regular safe field
+                        safe_fields.append(field_name)
+
+        # Add basic fields if missing
+        for b in ["email", "full_name"]:
+            if b not in safe_fields and re.search(rf'\b{b}\s*=', source):
+                safe_fields.append(b)
+
+        return safe_fields or ["email", "full_name"], fk_fields, m2m_fields
+
+    def _get_fk_related_model(self, call_node: ast.Call) -> str:
+        """Extract related model name from ForeignKey(RelatedModel, ...)"""
+        if call_node.args:
+            first = call_node.args[0]
+            if isinstance(first, ast.Name):
+                return first.id
+            if isinstance(first, ast.Constant):
+                # String reference like ForeignKey("Role", ...)
+                val = str(first.value)
+                return val.split(".")[-1]
+        return "RelatedModel"
+
+    def _guess_create_kwargs(self, model_name: str, source: str) -> dict:
+        """
+        Guess minimal kwargs to create the related model.
+        Looks for the model class and finds its required fields.
+        """
+        # Simple heuristic — look for name, title fields
+        try:
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == model_name:
+                    for item in node.body:
+                        if isinstance(item, ast.Assign):
+                            for target in item.targets:
+                                if isinstance(target, ast.Name):
+                                    if target.id == "name":
+                                        return {"name": "admin"}
+                                    if target.id == "title":
+                                        return {"title": "Test"}
+        except Exception:
+            pass
+        return {"name": "admin"}  # safe default
 
     #  ROLES FINDER
     def _get_available_roles(self, auth_dir: Path | None) -> list[str]:

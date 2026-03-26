@@ -415,6 +415,27 @@ class AIHelper:
             for f in safe_fields[:4]  # max 4 fields
         ])
 
+        # Build FK setup code
+        fk_imports = ""
+        fk_creates = ""
+        fk_in_create_user = ""
+
+        if self.analysis and self.analysis.user_fk_fields:
+            for fk in self.analysis.user_fk_fields:
+                field = fk["field"]
+                model = fk["model"]
+                module = fk["module"]
+                kwargs = ", ".join(f'{k}="{v}"' for k, v in fk["kwargs"].items())
+                fk_imports += f"from {module}.models import {model}\n"
+                fk_creates += f"        self.{field} = {model}.objects.create({kwargs})\n"
+                fk_in_create_user += f"                {field}=self.{field},\n"
+
+        # Build M2M setup code
+        m2m_setup = ""
+        if self.analysis and self.analysis.user_m2m_fields:
+            for m2m in self.analysis.user_m2m_fields:
+                m2m_setup += f"        # self.user.{m2m}.set([])  ← set after creation if needed\n"
+
         endpoint_lines = [
             f"  - [{', '.join(ep.http_methods)}]  "
             f"{ep.url_pattern}  "
@@ -460,25 +481,39 @@ class AIHelper:
         ## Safe fields detected from User model: {', '.join(safe_fields)}
         ## ManyToMany fields are excluded automatically
         
+                ## ADMIN USER SETUP:
         ```python
-        def setUp(self):
-            self.client = Client()
-            self.user = User.objects.create_user(
-                {safe_create}
-                is_staff=True,
-                is_superuser=True,
-            )
-            response = self.client.post(
-                "{login_url}",
-                data=json.dumps({{
-                    "email": "test@example.com",
-                    "password": "testpass123"
-                }}),
-                content_type="application/json"
-            )
-            token = response.json().get("data", {{}}).get("access", "")
-            self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
+        from django.test import TestCase, Client
+        import json
+        from {auth_module}.models import User
+        {fk_imports}
+
+        class AppTests(TestCase):
+            def setUp(self):
+                self.client = Client()
+                {fk_creates}
+                self.user = User.objects.create_user(
+                    {safe_create}
+                    {fk_in_create_user}
+                    is_staff=True,
+                    is_superuser=True,
+                )
+                {m2m_setup}
+                response = self.client.post(
+                    "{login_url}",
+                    data=json.dumps({{
+                        "email": "test@example.com",
+                        "password": "testpass123"
+                    }}),
+                    content_type="application/json"
+                )
+                token = response.json().get("data", {{}}).get("access", "")
+                self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
         ```
+        ## RULES:
+        - FK fields need related object created BEFORE User
+        - M2M fields set AFTER User creation with .set()
+        - NEVER pass FK as string — always pass object!
         ## Endpoints to test:
         {chr(10).join(endpoint_lines)}
 

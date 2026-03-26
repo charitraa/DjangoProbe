@@ -51,3 +51,5 @@ class ProjectAnalysis:
 
     # Roles found in the project (if any)
     roles: list[str] = field(default_factory=list)
+    user_fk_fields:   list      = field(default_factory=list)
+    user_m2m_fields:  list[str] = field(default_factory=list)

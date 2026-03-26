@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-03-23 14:22:39",
+  "generated_at": "2026-03-26 10:13:40",
   "summary": {
-    "total": 72,
+    "total": 81,
     "passed": 0,
     "failed": 0,
-    "errors": 72,
+    "errors": 81,
     "skipped": 0,
     "pass_rate": 0.0
   },
@@ -26,17 +26,9 @@
       "ai_explanation": null
     },
     {
-      "url": "test_get_all_pages",
+      "url": "test_get_pages",
       "app": "user",
-      "view": "test_get_all_pages",
-      "status": "ERROR",
-      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
-      "ai_explanation": null
-    },
-    {
-      "url": "test_get_all_roles",
-      "app": "user",
-      "view": "test_get_all_roles",
+      "view": "test_get_pages",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
@@ -45,6 +37,14 @@
       "url": "test_get_role_by_id",
       "app": "user",
       "view": "test_get_role_by_id",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_get_roles",
+      "app": "user",
+      "view": "test_get_roles",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
@@ -66,9 +66,9 @@
       "ai_explanation": null
     },
     {
-      "url": "test_get_user_me",
+      "url": "test_get_user_profile",
       "app": "user",
-      "view": "test_get_user_me",
+      "view": "test_get_user_profile",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
@@ -82,9 +82,9 @@
       "ai_explanation": null
     },
     {
-      "url": "test_logout_user",
+      "url": "test_logout",
       "app": "user",
-      "view": "test_logout_user",
+      "view": "test_logout",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
@@ -290,25 +290,17 @@
       "ai_explanation": null
     },
     {
-      "url": "test_photo_bulk_delete",
-      "app": "gallery",
-      "view": "test_photo_bulk_delete",
-      "status": "ERROR",
-      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
-      "ai_explanation": null
-    },
-    {
-      "url": "test_photo_bulk_upload",
-      "app": "gallery",
-      "view": "test_photo_bulk_upload",
-      "status": "ERROR",
-      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
-      "ai_explanation": null
-    },
-    {
       "url": "test_photo_delete",
       "app": "gallery",
       "view": "test_photo_delete",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_photo_detail",
+      "app": "gallery",
+      "view": "test_photo_detail",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
@@ -330,257 +322,337 @@
       "ai_explanation": null
     },
     {
-      "url": "test_attachment_bulk_upload",
+      "url": "test_attachment_bulk_upload_view",
       "app": "notices",
-      "view": "test_attachment_bulk_upload",
+      "view": "test_attachment_bulk_upload_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_attachment_delete",
+      "url": "test_attachment_delete_all_view",
       "app": "notices",
-      "view": "test_attachment_delete",
+      "view": "test_attachment_delete_all_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_attachment_delete_all",
+      "url": "test_attachment_upload_view",
       "app": "notices",
-      "view": "test_attachment_delete_all",
+      "view": "test_attachment_upload_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_attachment_upload",
+      "url": "test_logout_view",
       "app": "notices",
-      "view": "test_attachment_upload",
+      "view": "test_logout_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_bulk_delete",
+      "url": "test_notice_bulk_delete_view",
       "app": "notices",
-      "view": "test_notice_bulk_delete",
+      "view": "test_notice_bulk_delete_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_create",
+      "url": "test_notice_create_view",
       "app": "notices",
-      "view": "test_notice_create",
+      "view": "test_notice_create_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_delete",
+      "url": "test_notice_delete_all_view",
       "app": "notices",
-      "view": "test_notice_delete",
+      "view": "test_notice_delete_all_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_delete_all",
+      "url": "test_notice_delete_view",
       "app": "notices",
-      "view": "test_notice_delete_all",
+      "view": "test_notice_delete_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_detail",
+      "url": "test_notice_detail_view",
       "app": "notices",
-      "view": "test_notice_detail",
+      "view": "test_notice_detail_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_list",
+      "url": "test_notice_list_view",
       "app": "notices",
-      "view": "test_notice_list",
+      "view": "test_notice_list_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_public_list",
+      "url": "test_notice_public_list_view",
       "app": "notices",
-      "view": "test_notice_public_list",
+      "view": "test_notice_public_list_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_notice_update",
+      "url": "test_notice_update_view",
       "app": "notices",
-      "view": "test_notice_update",
+      "view": "test_notice_update_view",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_bulk_delete_downloads",
+      "url": "test_calendar_bulk_delete",
+      "app": "calender",
+      "view": "test_calendar_bulk_delete",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_calendar_create",
+      "app": "calender",
+      "view": "test_calendar_create",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_calendar_delete",
+      "app": "calender",
+      "view": "test_calendar_delete",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_calendar_detail",
+      "app": "calender",
+      "view": "test_calendar_detail",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_calendar_list",
+      "app": "calender",
+      "view": "test_calendar_list",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_calendar_update",
+      "app": "calender",
+      "view": "test_calendar_update",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_public_calendar_date",
+      "app": "calender",
+      "view": "test_public_calendar_date",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_public_calendar_month",
+      "app": "calender",
+      "view": "test_public_calendar_month",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_public_calendar_upcoming",
+      "app": "calender",
+      "view": "test_public_calendar_upcoming",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_download_bulk_delete",
       "app": "downloads",
-      "view": "test_bulk_delete_downloads",
+      "view": "test_download_bulk_delete",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_create_download",
+      "url": "test_download_create",
       "app": "downloads",
-      "view": "test_create_download",
+      "view": "test_download_create",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_delete_download",
+      "url": "test_download_create_public",
       "app": "downloads",
-      "view": "test_delete_download",
+      "view": "test_download_create_public",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_get_download",
+      "url": "test_download_delete",
       "app": "downloads",
-      "view": "test_get_download",
+      "view": "test_download_delete",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_get_downloads",
+      "url": "test_download_detail",
       "app": "downloads",
-      "view": "test_get_downloads",
+      "view": "test_download_detail",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_get_public_downloads",
+      "url": "test_download_list",
       "app": "downloads",
-      "view": "test_get_public_downloads",
+      "view": "test_download_list",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_update_download",
+      "url": "test_download_public_list",
       "app": "downloads",
-      "view": "test_update_download",
+      "view": "test_download_public_list",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_department_create_view",
-      "app": "teams",
-      "view": "test_department_create_view",
+      "url": "test_download_update",
+      "app": "downloads",
+      "view": "test_download_update",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_department_delete_view",
+      "url": "test_department_create",
       "app": "teams",
-      "view": "test_department_delete_view",
+      "view": "test_department_create",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_department_detail_view",
+      "url": "test_department_delete",
       "app": "teams",
-      "view": "test_department_detail_view",
+      "view": "test_department_delete",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_department_list_view",
+      "url": "test_department_detail",
       "app": "teams",
-      "view": "test_department_list_view",
+      "view": "test_department_detail",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_department_update_view",
+      "url": "test_department_list",
       "app": "teams",
-      "view": "test_department_update_view",
+      "view": "test_department_list",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_public_department_staff_view",
+      "url": "test_department_update",
       "app": "teams",
-      "view": "test_public_department_staff_view",
+      "view": "test_department_update",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_public_staff_view",
+      "url": "test_public_department_staff",
       "app": "teams",
-      "view": "test_public_staff_view",
+      "view": "test_public_department_staff",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_bulk_delete_view",
+      "url": "test_public_staff",
       "app": "teams",
-      "view": "test_staff_bulk_delete_view",
+      "view": "test_public_staff",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_create_view",
+      "url": "test_staff_bulk_delete",
       "app": "teams",
-      "view": "test_staff_create_view",
+      "view": "test_staff_bulk_delete",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_delete_view",
+      "url": "test_staff_create",
       "app": "teams",
-      "view": "test_staff_delete_view",
+      "view": "test_staff_create",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_detail_view",
+      "url": "test_staff_delete",
       "app": "teams",
-      "view": "test_staff_detail_view",
+      "view": "test_staff_delete",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_list_view",
+      "url": "test_staff_detail",
       "app": "teams",
-      "view": "test_staff_list_view",
+      "view": "test_staff_detail",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
     },
     {
-      "url": "test_staff_update_view",
+      "url": "test_staff_list",
       "app": "teams",
-      "view": "test_staff_update_view",
+      "view": "test_staff_list",
+      "status": "ERROR",
+      "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
+      "ai_explanation": null
+    },
+    {
+      "url": "test_staff_update",
+      "app": "teams",
+      "view": "test_staff_update",
       "status": "ERROR",
       "error": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/meow/.djangoprobe/cache/Brilliant_Sagarmatha_Server/.probe_venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py\", line 2766, in to_python\n    return uuid.UUID(**{input_form: value})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/uuid.py\", line 178, in __init__\n    raise ValueError('badly formed hexadecimal UUID string')\nValueError: badl",
       "ai_explanation": null
