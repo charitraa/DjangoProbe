@@ -176,3 +176,55 @@ class TestGenerator:
         if content.endswith("```"):
             content = content[:-3].strip()
         return content
+    def generate_for_app_inplace(
+        self,
+        app_name:      str,
+        app_endpoints: list[EndpointInfo],
+    ) -> str | None:
+        """
+        Generate test and write to app's OWN tests.py
+        e.g. apps/user/tests.py
+        """
+        console.print(
+            f"\n  [bold]App:[/bold] [cyan]{app_name}[/cyan] "
+            f"[dim]({len(app_endpoints)} endpoints)[/dim]"
+        )
+
+        # Find the app's own tests.py
+        app_dir = self.ai_helper.get_app_dir(app_name)
+        if not app_dir:
+            console.print(f"  [red]✗ App dir not found: {app_name}[/red]")
+            return None
+
+        test_file = app_dir / "tests.py"
+
+        # Generate via AI
+        content = self.ai_helper.generate_tests(app_name, app_endpoints)
+        if not content:
+            console.print(
+                f"  [red]✗ Failed to generate: {app_name}[/red]"
+            )
+            return None
+
+        content = self._clean_code(content)
+
+        # Backup existing tests.py if has real content
+        existing = test_file.read_text(encoding="utf-8") if test_file.exists() else ""
+        if existing.strip() and existing.strip() != "# Create your tests here.":
+            backup_dir  = self.output_dir / "backup"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_dir / f"{app_name}_tests_{timestamp}.py"
+            backup_path.write_text(existing, encoding="utf-8")
+            console.print(
+                f"  [yellow]↺ Backed up:[/yellow] {backup_path.name}"
+            )
+
+        # Write to app's tests.py
+        test_file.write_text(content, encoding="utf-8")
+        console.print(
+            f"  [green]✓ Written:[/green] "
+            f"{test_file.relative_to(self.repo_path)}"
+        )
+
+        return str(test_file)

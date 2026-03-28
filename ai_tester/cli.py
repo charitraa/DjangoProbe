@@ -8,9 +8,9 @@ from ai_tester.models import InputType, ProjectSource
 from ai_tester.repo_handler import RepoHandler
 from ai_tester.endpoint_scanner import EndpointScanner
 from ai_tester.test_generator import TestGenerator
-from ai_tester.test_runner import TestRunner
 from ai_tester.report import ReportGenerator
 from ai_tester.project_analyzer import ProjectAnalyzer
+from ai_tester.app_test_runner  import AppTestRunner
 
 app = typer.Typer(help="AI-powered Django API test runner")
 console = Console()
@@ -146,35 +146,61 @@ def analyze(
         progress.remove_task(task)
     console.print(f"[green]✓ Found {len(endpoints)} endpoint(s)[/green]")
 
-    # Module 3.5: Project Analyzer
+    # ── Module 4+5: Per-app loop
+    console.print("\n[bold]→ Generating and testing app by app...[/bold]")
+
     analyzer = ProjectAnalyzer(project.repo_path)
     analysis = analyzer.analyze()
+    all_results = []
 
-    # Module 4: Test Generator 
-    # Outside spinner — may prompt user about existing files
-    console.print("\n[bold]→ Generating test cases...[/bold]")
-    generator  = TestGenerator(project.repo_path, endpoints, analysis)
-    test_files = generator.generate()
-    console.print(f"[green]✓ Generated {len(test_files)} test file(s)[/green]")
+    # Group endpoints by app
+    generator   = TestGenerator(project.repo_path, endpoints, analysis)
+    app_groups  = generator._group_by_app()
 
-    # Module 5: Test Runner
-    # Inside spinner — no prompts
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task    = progress.add_task("Running tests...", total=None)
-        runner  = TestRunner(project.repo_path, test_files)
-        results = runner.run()
-        progress.remove_task(task)
-    console.print("[green]✓ Tests complete[/green]")
+    runner = AppTestRunner(project.repo_path)
+
+    for app_name, app_endpoints in app_groups.items():
+
+        console.print(
+            f"\n[bold cyan]── App: {app_name} ──[/bold cyan]"
+        )
+
+        # Step 1 — Generate test into app's own tests.py
+        test_file = generator.generate_for_app_inplace(
+            app_name, app_endpoints
+        )
+        if not test_file:
+            console.print(f"  [red]✗ Skipping {app_name}[/red]")
+            continue
+
+        # Step 2 — Run tests for this app only
+        results, run_output = runner.run_single_app(app_name)
+
+        if run_output.startswith("ERROR:"):
+            console.print(f"  [red]✗ Runner error:[/red] {run_output}")
+            continue
+        # Step 3 — Check results
+        errors = [r for r in results if r.status in ("ERROR", "FAILED")]
+
+        if not errors:
+            console.print(
+                f"  [green]✅ {app_name}: All tests passed![/green]"
+            )
+        else:
+            console.print(
+                f"  [yellow]⚠ {app_name}: "
+                f"{len(errors)} errors — saving to JSON[/yellow]"
+            )
+            # Save per-app error JSON
+            runner.save_app_errors(app_name, errors, run_output)
+
+        all_results.extend(results)
 
     #Module 6: Report
     report = ReportGenerator(
-    results,
-    output_path = output,
-    repo_path   = project.repo_path,
+        all_results,
+        output_path = output,
+        repo_path   = project.repo_path,
     )
     report.print()
 
