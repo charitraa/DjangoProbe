@@ -95,14 +95,6 @@ def analyze(
         ...,
         help="GitHub URL, GitLab URL, SSH git URL, or local project path"
     ),
-    output: str = typer.Option(
-        None, "--output",
-        help="Export report (e.g. report.json or report.pdf)"
-    ),
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v",
-        help="Show detailed logs"
-    ),
 ):
     #Banner
     console.print(Panel(
@@ -196,10 +188,11 @@ def analyze(
 
         all_results.extend(results)
 
+    auto_output = str(Path(project.repo_path) / "djangoprobe_report.json")
     #Module 6: Report
     report = ReportGenerator(
         all_results,
-        output_path = output,
+        output_path = auto_output,
         repo_path   = project.repo_path,
     )
     report.print()

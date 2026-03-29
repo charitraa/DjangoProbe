@@ -76,18 +76,20 @@ class AppTestRunner:
             )
 
             output = result.stderr + "\n" + result.stdout
-            console.print(
-                f"  [dim]Return code:[/dim] {result.returncode}"
-            )
 
-            results = self._parse_results(output)
+            for line in output.split("\n"):
+                if line.startswith("Ran "):
+                    console.print(f"  [dim]{line}[/dim]")
+                if line.startswith("OK") or line.startswith("FAILED"):
+                    color = "green" if line.startswith("OK") else "red"
+                    console.print(f"  [{color}]{line}[/{color}]")
+
+            results = self._parse_results(output, app_module)
             return results, output
 
         except subprocess.TimeoutExpired:
-            console.print(f"  [red]✗ Timeout for {app_name}[/red]")
             return [], "ERROR: Timeout"
         except Exception as e:
-            console.print(f"  [red]✗ Error:[/red] {e}")
             return [], f"ERROR: {e}"
 
     def save_app_errors(
@@ -152,10 +154,10 @@ class AppTestRunner:
                 return candidate
         return None
 
-    def _parse_results(self, output: str) -> list[TestResult]:
-        """Parse Django test output."""
+    def _parse_results(self, output: str, app_module: str = "") -> list[TestResult]:
         results = []
 
+        # Pattern: test_name (module.Class) ... ok/FAIL/ERROR
         pattern = re.compile(
             r"^(test\w+)\s+\(([^)]+)\)\s+\.\.\.\s+(ok|FAIL|ERROR|skipped.*?)$",
             re.MULTILINE | re.IGNORECASE,
@@ -172,38 +174,42 @@ class AppTestRunner:
             module     = match.group(2)
             raw_status = match.group(3).strip().upper()
 
-            if raw_status.startswith("SKIPPED"):
-                status = "SKIPPED"
-            else:
-                status = status_map.get(raw_status, "ERROR")
+            status = "SKIPPED" if raw_status.startswith("SKIPPED") \
+                    else status_map.get(raw_status, "ERROR")
 
+            # Extract app name from module
             app_name = ""
             for part in module.split("."):
-                if part.startswith("test") or part == "tests":
-                    continue
-                app_name = part
-                break
+                if part not in ("tests", "test") and not part.startswith("Test"):
+                    app_name = part
+                    break
+
+            # Extract error details for failed tests
+            error_msg = None
+            if status in ("FAILED", "ERROR"):
+                error_msg = self._extract_error(output, test_name)
+
+            # Extract URL from test name
+            # test_login_user → /api/user/login/
+            url = self._url_from_test_name(test_name, app_name)
 
             results.append(TestResult(
                 endpoint = EndpointInfo(
-                    url_pattern   = test_name,
-                    http_methods  = [],
+                    url_pattern   = url,
+                    http_methods  = self._method_from_test_name(test_name),
                     view_name     = test_name,
                     requires_auth = False,
                     app_name      = app_name,
                 ),
                 status        = status,
-                response_code = 0,
-                expected_code = 0,
-                error_message = (
-                    self._extract_error(output, test_name)
-                    if status in ("FAILED", "ERROR")
-                    else None
-                ),
+                response_code = self._code_from_error(error_msg),
+                expected_code = self._expected_code_from_test(test_name),
+                error_message = error_msg,
             ))
 
+        # Fallback
         if not results:
-            has_error = "ERROR" in output
+            has_error = "ERROR" in output or "error" in output.lower()
             results.append(TestResult(
                 endpoint = EndpointInfo(
                     url_pattern   = "/",
@@ -219,6 +225,51 @@ class AppTestRunner:
             ))
 
         return results
+    def _url_from_test_name(self, test_name: str, app_name: str) -> str:
+        """Guess URL from test name."""
+        name = test_name
+        for prefix in ["test_"]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+
+        # Remove common suffixes
+        for suffix in [
+            "_success", "_failure", "_error",
+            "_valid", "_invalid", "_empty",
+            "_auth", "_no_auth", "_without_auth",
+            "_create", "_list", "_detail",
+            "_update", "_delete", "_bulk",
+        ]:
+            name = name.replace(suffix, "")
+
+        return f"/api/{name.replace('_', '/')}/"
+    def _method_from_test_name(self, test_name: str) -> list[str]:
+        """Guess HTTP method from test name."""
+        name = test_name.lower()
+        if "create" in name or "post" in name:   return ["POST"]
+        if "update" in name or "put" in name:    return ["PUT"]
+        if "delete" in name:                      return ["DELETE"]
+        if "patch" in name:                       return ["PATCH"]
+        return ["GET"]
+
+    def _code_from_error(self, error_msg: str | None) -> int:
+        """Extract actual status code from error message."""
+        if not error_msg:
+            return 200
+        match = re.search(r"(\d{3}) != \d{3}", error_msg)
+        if match:
+            return int(match.group(1))
+        return 0
+
+    def _expected_code_from_test(self, test_name: str) -> int:
+        """Guess expected code from test name."""
+        name = test_name.lower()
+        if "create" in name:  return 201
+        if "delete" in name:  return 200
+        if "login" in name:   return 200
+        if "invalid" in name: return 400
+        if "no_auth" in name: return 401
+        return 200
 
     def _extract_error(self, output: str, test_name: str) -> str | None:
         pattern = re.compile(

@@ -194,41 +194,36 @@ class ReportGenerator:
             )
 
     def _export_json(self, path: Path) -> None:
-        """Export results to JSON file."""
-
         data = {
             "generated_at": self.generated_at,
+            "project":      Path(self.repo_path).name if self.repo_path else "",
             "summary": {
-                "total":   self.total,
-                "passed":  self.passed,
-                "failed":  self.failed,
-                "errors":  self.errors,
-                "skipped": self.skipped,
+                "total":     self.total,
+                "passed":    self.passed,
+                "failed":    self.failed,
+                "errors":    self.errors,
+                "skipped":   self.skipped,
                 "pass_rate": round(
-                    (self.passed / self.total * 100) if self.total else 0,
-                    2
+                    (self.passed / self.total * 100) if self.total else 0, 2
                 ),
             },
             "results": [
                 {
-                    "url":          r.endpoint.url_pattern,
-                    "app":          r.endpoint.app_name,
-                    "view":         r.endpoint.view_name,
-                    "status":       r.status,
-                    "error":        r.error_message,
-                    "ai_explanation": r.ai_explanation,
+                    "test_name":     r.endpoint.view_name,
+                    "app":           r.endpoint.app_name,
+                    "url":           r.endpoint.url_pattern,
+                    "method":        r.endpoint.http_methods,
+                    "status":        r.status,
+                    "response_code": r.response_code,
+                    "expected_code": r.expected_code,
+                    "error":         r.error_message,
                 }
                 for r in self.results
             ]
         }
 
-        path.write_text(
-            json.dumps(data, indent=2),
-            encoding="utf-8"
-        )
-        console.print(
-            f"  [green]✓ JSON report saved:[/green] {path}"
-        )
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        console.print(f"  [green]✓ JSON report saved:[/green] {path}")
 
     def _export_pdf(self, path: Path) -> None:
         """Export results to PDF file."""
