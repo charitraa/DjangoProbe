@@ -44,7 +44,7 @@ class AppTestRunner:
         # Find the app module from installed apps
         # e.g. "user" → "apps.user"
         app_module = self._get_app_module(app_name)
-
+        test_label = f"{app_module}.tests"
         env = os.environ.copy()
         env_file = self.repo_path / ".env"
         if env_file.exists():
@@ -64,7 +64,7 @@ class AppTestRunner:
                     str(self.python),
                     "manage.py",
                     "test",
-                    app_module,
+                    test_label,
                     "--verbosity=2",
                     "--keepdb",
                 ],

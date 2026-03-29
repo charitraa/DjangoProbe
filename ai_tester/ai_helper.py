@@ -468,7 +468,12 @@ class AIHelper:
         from {auth_module}.models import User            # User model for auth
 
         # FORBIDDEN — never use these:
-        # NEVER pass id= — Django auto-generates UUID automatically!
+        # In _build_prompt() — add to FORBIDDEN section:
+        # ❌ NEVER pass id= to create_user() or objects.create()
+        # Django auto-generates UUIDs — passing id= causes ValueError!
+        # Wrong:  User.objects.create_user(id=1, ...)
+        # Wrong:  User.objects.create_user(id="test_value", ...)
+        # Correct: User.objects.create_user(email=..., ...)  ← no id!
         from .models import ...          # relative imports
         from .serializers import ...     # relative imports
         from gallery.models import ...   # incomplete path
