@@ -172,3 +172,11 @@ cython_debug/
 #.idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/django
+
+CLAUDE.md/
+/CLAUDE.md
+/.claude
+.idea
+claude.md
+/claude.md
+/CLAUDE.md

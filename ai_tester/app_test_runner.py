@@ -98,7 +98,7 @@ class AppTestRunner:
         errors:   list,
         output:   str,
     ) -> None:
-        """Save error details to JSON for this app."""
+        """Save detailed error information to JSON for this app."""
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path      = self.errors_dir / f"{app_name}_{timestamp}.json"
@@ -109,13 +109,18 @@ class AppTestRunner:
             "error_count":  len(errors),
             "errors": [
                 {
-                    "test":   r.endpoint.url_pattern,
-                    "status": r.status,
-                    "error":  r.error_message,
+                    "test_name":     r.endpoint.view_name,
+                    "app_name":      r.endpoint.app_name,
+                    "url":           r.endpoint.url_pattern,
+                    "http_methods":  r.endpoint.http_methods,
+                    "status":        r.status,
+                    "response_code": r.response_code,
+                    "expected_code": r.expected_code,
+                    "error_message": r.error_message,
                 }
                 for r in errors
             ],
-            "raw_output": output[-2000:],  # last 2000 chars
+            "raw_output": output[-5000:],  # last 5000 chars for context
         }
 
         path.write_text(json.dumps(data, indent=2))
@@ -157,57 +162,91 @@ class AppTestRunner:
     def _parse_results(self, output: str, app_module: str = "") -> list[TestResult]:
         results = []
 
-        # Pattern: test_name (module.Class) ... ok/FAIL/ERROR
-        pattern = re.compile(
-            r"^(test\w+)\s+\(([^)]+)\)\s+\.\.\.\s+(ok|FAIL|ERROR|skipped.*?)$",
+        # Pattern for Django test output: ERROR/FAIL: test_name (module.Class.test_name)
+        test_pattern = re.compile(
+            r"^(ERROR|FAIL):\s+(test\w+)\s+\(([^)]+)\)\s*$",
             re.MULTILINE | re.IGNORECASE,
         )
 
-        status_map = {
-            "OK":    "PASSED",
-            "FAIL":  "FAILED",
-            "ERROR": "ERROR",
-        }
+        # Pattern for passed tests from "Ran X tests" and "OK" or "FAILED" summary
+        summary_pattern = re.compile(
+            r"^Ran\s+(\d+)\s+test.*?\n\s*(OK|FAILED|ERROR)",
+            re.MULTILINE | re.IGNORECASE,
+        )
 
-        for match in pattern.finditer(output):
-            test_name  = match.group(1)
-            module     = match.group(2)
-            raw_status = match.group(3).strip().upper()
+        # Find all ERROR and FAIL test entries
+        for match in test_pattern.finditer(output):
+            status_type = match.group(1).upper()  # ERROR or FAIL
+            test_name   = match.group(2)
+            module_info = match.group(3)
 
-            status = "SKIPPED" if raw_status.startswith("SKIPPED") \
-                    else status_map.get(raw_status, "ERROR")
-
-            # Extract app name from module
+            # Parse module info: apps.user.tests.AppTests.test_get_user_details
+            parts = module_info.split(".")
             app_name = ""
-            for part in module.split("."):
-                if part not in ("tests", "test") and not part.startswith("Test"):
+            # Find the first app name part (not 'tests', not 'AppTests')
+            for part in parts:
+                if part not in ("tests", "test") and not part.startswith("AppTests") and not part.startswith("Test") and not part.endswith("tests"):
+                    # Skip common framework modules like "apps" if there's a real app name after it
+                    if part == "apps" and len(parts) > 3:
+                        continue
                     app_name = part
                     break
 
-            # Extract error details for failed tests
-            error_msg = None
-            if status in ("FAILED", "ERROR"):
-                error_msg = self._extract_error(output, test_name)
+            # Extract error details
+            error_msg = self._extract_error(output, test_name)
+            actual_code = self._extract_actual_code(error_msg)
+            expected_code = self._extract_expected_code(error_msg)
 
-            # Extract URL from test name
-            # test_login_user → /api/user/login/
-            url = self._url_from_test_name(test_name, app_name)
+            # Extract URL and HTTP method from test output (INFO lines)
+            url, methods = self._extract_url_and_methods(output, test_name)
+
+            # Fallback: extract URL/methods from test name if INFO lines not found
+            if not url or not methods:
+                fallback_url = self._url_from_test_name(test_name, app_name)
+                fallback_methods = self._method_from_test_name(test_name)
+                if not url:
+                    url = fallback_url
+                if not methods:
+                    methods = fallback_methods
 
             results.append(TestResult(
                 endpoint = EndpointInfo(
                     url_pattern   = url,
-                    http_methods  = self._method_from_test_name(test_name),
+                    http_methods  = methods,
                     view_name     = test_name,
                     requires_auth = False,
                     app_name      = app_name,
                 ),
-                status        = status,
-                response_code = self._code_from_error(error_msg),
-                expected_code = self._expected_code_from_test(test_name),
+                status        = status_type,
+                response_code = actual_code,
+                expected_code = expected_code,
                 error_message = error_msg,
             ))
 
-        # Fallback
+        # Count passed tests from summary
+        if summary_pattern.search(output):
+            summary_match = summary_pattern.search(output)
+            total_tests = int(summary_match.group(1))
+            failed_count = len(results)
+            passed_count = total_tests - failed_count
+
+            # Add placeholder results for passed tests
+            for i in range(passed_count):
+                results.append(TestResult(
+                    endpoint = EndpointInfo(
+                        url_pattern   = "passed_test",
+                        http_methods  = [],
+                        view_name     = f"passed_test_{i+1}",
+                        requires_auth = False,
+                        app_name      = app_module.split(".")[-1] if app_module else "unknown",
+                    ),
+                    status        = "PASSED",
+                    response_code = 200,
+                    expected_code = 200,
+                    error_message = None,
+                ))
+
+        # Fallback if no tests parsed
         if not results:
             has_error = "ERROR" in output or "error" in output.lower()
             results.append(TestResult(
@@ -221,27 +260,28 @@ class AppTestRunner:
                 status        = "ERROR" if has_error else "PASSED",
                 response_code = 0,
                 expected_code = 0,
-                error_message = output[-500:] if has_error else None,
+                error_message = output[-1000:] if has_error else None,
             ))
 
         return results
     def _url_from_test_name(self, test_name: str, app_name: str) -> str:
-        """Guess URL from test name."""
+        """Guess URL from test name and app name."""
         name = test_name
         for prefix in ["test_"]:
             if name.startswith(prefix):
                 name = name[len(prefix):]
 
-        # Remove common suffixes
-        for suffix in [
-            "_success", "_failure", "_error",
-            "_valid", "_invalid", "_empty",
-            "_auth", "_no_auth", "_without_auth",
-            "_create", "_list", "_detail",
-            "_update", "_delete", "_bulk",
-        ]:
-            name = name.replace(suffix, "")
+        # Remove common action prefixes first
+        for prefix in ["get_", "create_", "update_", "delete_", "list_", "post_"]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
 
+        # Use app_name if available, otherwise fall back to generic API path
+        if app_name:
+            # Check if the name already contains the app_name to avoid duplication
+            if name.startswith(f"{app_name}_"):
+                name = name[len(app_name)+1:]  # Remove "app_" prefix
+            return f"/api/{app_name}/{name.replace('_', '/')}/"
         return f"/api/{name.replace('_', '/')}/"
     def _method_from_test_name(self, test_name: str) -> list[str]:
         """Guess HTTP method from test name."""
@@ -261,6 +301,69 @@ class AppTestRunner:
             return int(match.group(1))
         return 0
 
+    def _extract_actual_code(self, error_msg: str | None) -> int:
+        """Extract actual status code from error message."""
+        if not error_msg:
+            return 200
+        # Match pattern like "500 != 200"
+        match = re.search(r"(\d{3})\s*!=\s*\d{3}", error_msg)
+        if match:
+            return int(match.group(1))
+        # Look for status code in error response body like {"status":500}
+        match = re.search(r'"status":\s*(\d{3})', error_msg)
+        if match:
+            return int(match.group(1))
+        # Look for status codes in messages like "Response Status: 500"
+        match = re.search(r"Response Status:\s*(\d{3})", error_msg)
+        if match:
+            return int(match.group(1))
+        # For server errors without explicit codes, default to 500
+        if any(keyword in error_msg.lower() for keyword in ["internal server error", "server fault", "server error", "typeerror", "traceback"]):
+            return 500
+        return 0
+
+    def _extract_expected_code(self, error_msg: str | None) -> int:
+        """Extract expected status code from error message."""
+        if not error_msg:
+            return 200
+        # Match pattern like "500 != 200" - we want the second one
+        match = re.search(r"\d{3}\s*!=\s*(\d{3})", error_msg)
+        if match:
+            return int(match.group(1))
+        return 200
+
+    def _extract_url_and_methods(self, output: str, test_name: str) -> tuple[str, list[str]]:
+        """Extract URL and HTTP methods from test output INFO lines for a specific test."""
+        url = ""
+        methods = []
+
+        # Look for INFO lines related to this specific test
+        # First find the test section, then extract INFO lines within it
+        test_section_pattern = re.compile(
+            rf"(?:FAIL|ERROR):\s+{re.escape(test_name)}.*?\n(.*?)"
+            rf"(?=\n(?:FAIL|ERROR|Ran|OK|\-{{70}}|\n\n|$))",
+            re.DOTALL,
+        )
+        test_match = test_section_pattern.search(output)
+
+        test_content = test_match.group(1) if test_match else output
+
+        # Pattern: INFO Sending Request: POST /api/user/login/
+        request_pattern = re.compile(
+            r"INFO\s+Sending\s+Request:\s+(POST|GET|PUT|DELETE|PATCH)\s+([^\s\n]+)",
+            re.IGNORECASE
+        )
+
+        for match in request_pattern.finditer(test_content):
+            method = match.group(1).upper()
+            extracted_url = match.group(2)
+            if method not in methods:
+                methods.append(method)
+            if not url:  # Take the first URL found as primary
+                url = extracted_url
+
+        return url, methods
+
     def _expected_code_from_test(self, test_name: str) -> int:
         """Guess expected code from test name."""
         name = test_name.lower()
@@ -272,14 +375,25 @@ class AppTestRunner:
         return 200
 
     def _extract_error(self, output: str, test_name: str) -> str | None:
-        pattern = re.compile(
+        """Extract detailed error information from test output."""
+        # Find the error section for this test
+        error_pattern = re.compile(
             rf"(?:FAIL|ERROR):\s+{re.escape(test_name)}.*?\n(.*?)"
-            rf"(?=\n(?:FAIL|ERROR|OK|Ran|\-{{70}}))",
+            rf"(?=\n(?:FAIL|ERROR|Ran|OK|\-{{70}}|$))",
             re.DOTALL,
         )
-        match = pattern.search(output)
+        match = error_pattern.search(output)
         if match:
-            return match.group(1).strip()[:500]
+            error_section = match.group(1).strip()
+            # Extract the most relevant part - the assertion error or traceback
+            # Look for lines with "AssertionError" or the actual error message
+            assertion_match = re.search(
+                r"(AssertionError:.+?$|TypeError:.+?$|.*?Internal Server Error.+?$)",
+                error_section, re.MULTILINE | re.DOTALL
+            )
+            if assertion_match:
+                return assertion_match.group(1).strip()[:1000]
+            return error_section[:1000]
         return None
     def _setup_venv(self) -> None:
       if self.venv_path.exists():

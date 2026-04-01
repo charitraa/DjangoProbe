@@ -459,7 +459,24 @@ class AIHelper:
         - NEVER use relative imports (no from .models import ...)
         - NEVER import serializers — use plain dicts for POST data
         - NEVER use status.HTTP_xxx — use plain integers: 200, 201, 400, 401
-        
+        ## PASSWORD RULE — CRITICAL:
+        # create_user() MUST receive password — otherwise login returns 401!
+        # ✅ CORRECT:
+        self.user = User.objects.create_user(
+            email="test@example.com",
+            password="testpass123",   # ← ALWAYS include password!
+            full_name="Test User",
+            role=self.role,
+            is_staff=True,
+            is_superuser=True,
+        )
+        #
+        # ❌ WRONG — no password = login always fails:
+        self.user = User.objects.create_user(
+            email="test@example.com",
+            full_name="Test User",
+            # missing password!
+        )
         ```python
         # CORRECT imports:
         from django.test import TestCase, Client
@@ -487,7 +504,7 @@ class AIHelper:
         ## Safe fields detected from User model: {', '.join(safe_fields)}
         ## ManyToMany fields are excluded automatically
         
-                ## ADMIN USER SETUP:
+        ## ADMIN USER SETUP:
         ```python
         from django.test import TestCase, Client
         import json
@@ -548,7 +565,6 @@ class AIHelper:
         - No status.HTTP_xxx — use 200, 201, 400, 401, 403, 404, 405
         - For logout: use assertIn([200, 205]) not assertEqual(200)
         - Add msg=f"Got {{response.status_code}}: {{response.content}}" to all assertions
-
         Return ONLY Python code. No markdown. No explanation.
         """
 
