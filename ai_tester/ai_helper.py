@@ -450,124 +450,82 @@ class AIHelper:
         ]
 
         return f"""
-        Generate a complete Django test file for the "{app_name}" app.
-        
-        ## CRITICAL — Exact import paths for THIS project:
-        - This app module path: {app_module}
-        - Import models like:      from {app_module}.models import ModelName
-        - Import from user app:    from apps.user.models import User
-        - NEVER use relative imports (no from .models import ...)
-        - NEVER import serializers — use plain dicts for POST data
-        - NEVER use status.HTTP_xxx — use plain integers: 200, 201, 400, 401
-        ## PASSWORD RULE — CRITICAL:
-        # create_user() MUST receive password — otherwise login returns 401!
-        # ✅ CORRECT:
-        self.user = User.objects.create_user(
-            email="test@example.com",
-            password="testpass123",   # ← ALWAYS include password!
-            full_name="Test User",
-            role=self.role,
-            is_staff=True,
-            is_superuser=True,
-        )
-        #
-        # ❌ WRONG — no password = login always fails:
-        self.user = User.objects.create_user(
-            email="test@example.com",
-            full_name="Test User",
-            # missing password!
-        )
-        ```python
-        # CORRECT imports:
-        from django.test import TestCase, Client
-        import json
-        from {app_module}.models import <ModelName>      # models from THIS app
-        from {auth_module}.models import User            # User model for auth
+    Generate a complete Django test file for the "{app_name}" app.
 
-        # FORBIDDEN — never use these:
-        # In _build_prompt() — add to FORBIDDEN section:
-        # ❌ NEVER pass id= to create_user() or objects.create()
-        # Django auto-generates UUIDs — passing id= causes ValueError!
-        # Wrong:  User.objects.create_user(id=1, ...)
-        # Wrong:  User.objects.create_user(id="test_value", ...)
-        # Correct: User.objects.create_user(email=..., ...)  ← no id!
-        from .models import ...          # relative imports
-        from .serializers import ...     # relative imports
-        from gallery.models import ...   # incomplete path
-        from user.models import ...      # incomplete path
-        from rest_framework import status  # use plain numbers instead
-        from {app_module}.serializers import ...  # never import serializers
-        from {app_module}.services import ...     # never import services
-        ```
-        ## Auth setup — login URL is: {login_url}
-        ## ADMIN USER SETUP — use ONLY these safe fields:
-        ## Safe fields detected from User model: {', '.join(safe_fields)}
-        ## ManyToMany fields are excluded automatically
-        
-        ## ADMIN USER SETUP:
-        ```python
-        from django.test import TestCase, Client
-        import json
-        from {auth_module}.models import User
-        {fk_imports}
+    ## IMPORTS
+    from django.test import TestCase, Client
+    import json
+    from {app_module}.models import <ModelName>
+    from {auth_module}.models import User
 
-        class AppTests(TestCase):
-            def setUp(self):
-                self.client = Client()
-                {fk_creates}
-                self.user = User.objects.create_user(
-                    {safe_create}
-                    {fk_in_create_user}
-                    is_staff=True,
-                    is_superuser=True,
-                )
-                {m2m_setup}
-                response = self.client.post(
-                    "{login_url}",
-                    data=json.dumps({{
-                        "email": "test@example.com",
-                        "password": "testpass123"
-                    }}),
-                    content_type="application/json"
-                )
-                token = response.json().get("data", {{}}).get("access", "")
-                self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
-        ```
-        ## RULES:
-        - FK fields need related object created BEFORE User
-        - M2M fields set AFTER User creation with .set()
-        - NEVER pass FK as string — always pass object!
-        ## Endpoints to test:
-        {chr(10).join(endpoint_lines)}
+    ## FORBIDDEN IMPORTS — never use these:
+    # from .models / .serializers / .services import ...   (no relative imports)
+    # from rest_framework import status                     (use plain integers)
+    # from {app_module}.serializers import ...
+    # from {app_module}.services import ...
 
-        ## Project context:
-        - Auth app: {auth_app_name}
-        - Login URL: {login_url}
+    ## SETUP RULES
+    1. Never pass `id=` to create_user() or objects.create() — Django auto-generates UUIDs
+    2. Always include `password= and confirm_password=` in create_user() — omitting it causes 401 on login
+    3. Create FK-related objects BEFORE the User
+    4. Set M2M fields AFTER User creation using .set()
+    5. Never pass FK fields as strings — always pass the object
 
-        ## Source code — read ALL files before writing:
-        {chr(10).join(context_sections)}
+    ## ADMIN USER SETUP
+    ```python
+    class AppTests(TestCase):
+        def setUp(self):
+            self.client = Client()
+            {fk_creates}
+            self.user = User.objects.create_user(
+                {safe_create}
+                {fk_in_create_user}
+                is_staff=True,
+                is_superuser=True,
+            )
+            {m2m_setup}
+            response = self.client.post(
+                "{login_url}",
+                data=json.dumps({{
+                    "email": "test@example.com",
+                    "password": "testpass123"
+                }}),
+                content_type="application/json"
+            )
+            token = response.json().get("data", {{}}).get("access", "")
+            self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
+    ```
 
-        ## READING GUIDE:
+    ## READING GUIDE — read ALL files before writing tests:
+    1. models.py       → exact field names and types
+    2. serializers.py  → required fields for POST/PUT
+    3. views.py        → permission_classes (auth needed?)
+    4. urls.py         → exact URL patterns and path params
+    5. services/repo   → understand data processing
+    6. auth_models.py  → exact User model fields for setUp
+    7. auth_urls.py    → login endpoint URL
 
-        1. READ models.py → find EXACT field names and types
-        2. READ serializers.py → find REQUIRED fields for POST/PUT
-        3. READ views.py → find permission_classes (auth needed?)
-        4. READ urls.py → find exact URL patterns and path params
-        5. READ services/repository → understand what data is processed
-        6. READ auth_models.py → find EXACT User model fields for setUp
-        7. READ auth_urls.py → find the login endpoint URL
+    ## TEST RULES
+    - Use ONLY field names and model classes visible in the source code
+    - Use TestCase only — no APITestCase
+    - Use plain status codes: 200, 201, 400, 401, 403, 404, 405
+    - For logout: use assertIn([200, 205]) not assertEqual(200)
+    - Add msg=f"Got {{response.status_code}}: {{response.content}}" to all assertions
 
-        ## TEST RULES:
-        - Use ONLY field names visible in the source code above
-        - Use ONLY model classes visible in the source code above
-        - No relative imports
-        - No APITestCase — use TestCase only
-        - No status.HTTP_xxx — use 200, 201, 400, 401, 403, 404, 405
-        - For logout: use assertIn([200, 205]) not assertEqual(200)
-        - Add msg=f"Got {{response.status_code}}: {{response.content}}" to all assertions
-        Return ONLY Python code. No markdown. No explanation.
-        """
+    ## PROJECT CONTEXT
+    - Auth app:  {auth_app_name}
+    - Login URL: {login_url}
+    - App module: {app_module}
+    - Safe User fields: {', '.join(safe_fields)}
 
+    ## ENDPOINTS TO TEST
+    {chr(10).join(endpoint_lines)}
+
+    ## SOURCE CODE
+    {chr(10).join(context_sections)}
+
+    Return ONLY Python code. No markdown. No explanation.
+    """
     #  HELPERS
     def _find_settings(self) -> Path | None:
         for candidate in self.repo_path.rglob("settings.py"):
