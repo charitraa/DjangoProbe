@@ -23,7 +23,7 @@ class EnhancedTestGenerator:
         test_files = generator.generate()
     """
 
-    MAX_TOKENS = 12000  # Maximum tokens for AI test generation
+    MAX_TOKENS = 8000  # Maximum tokens for AI test generation (reduced to stay within 12K TPM limit)
 
     def __init__(
         self,
@@ -226,26 +226,25 @@ Return ONLY valid Python code — no markdown fences, no explanation, no preambl
 
 Generate the complete test file now."""
 
-        try:
-            console.print(f"    [dim]Calling AI model...[/dim]")
-            response = self.ai_helper.client.chat.completions.create(
-                model=self.ai_helper.MODEL,
-                max_tokens=self.MAX_TOKENS,  # Increased for more comprehensive tests
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+        console.print(f"    [dim]Calling AI model...[/dim]")
+        response = self.ai_helper.call_with_retry(
+            model=self.ai_helper.MODEL,
+            max_tokens=self.MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
 
+        if response:
             content = response.choices[0].message.content
             if content:
                 console.print(
                     f"    [green]✓ Generated {len(content)} chars of test code[/green]"
                 )
                 return content
-
-        except Exception as e:
-            console.print(f"    [red]✗ AI generation failed: {e}[/red]")
+        else:
+            console.print(f"    [red]✗ AI generation failed after retries[/red]")
 
         return None
 
@@ -257,6 +256,9 @@ Generate the complete test file now."""
         file_path: Path,
     ) -> str:
         """Write test file to disk with backup support."""
+
+        # Ensure parent directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         if file_path.exists():
             existing = file_path.read_text(encoding="utf-8")

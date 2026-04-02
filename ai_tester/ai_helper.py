@@ -187,3 +187,62 @@ class AIHelper:
     def _should_skip(self, path: Path) -> bool:
         skip = {"venv", "env", "site-packages", "__pycache__", ".git"}
         return any(p in path.parts for p in skip)
+
+    def call_with_retry(self, **kwargs) -> any:
+        """
+        Call AI API with retry logic for rate limits.
+
+        Handles:
+        - Rate limit errors (413, 429)
+        - Key rotation
+        - Waiting between retries
+
+        Returns:
+            The API response or None if all retries exhausted
+        """
+        import time
+
+        max_retries = 3
+        wait_time = 60  # seconds to wait when rate limited
+
+        for attempt in range(max_retries):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+
+            except Exception as e:
+                error_str = str(e)
+
+                # Check for rate limit errors
+                is_rate_limit = (
+                    "rate_limit_exceeded" in error_str
+                    or "413" in error_str
+                    or "429" in error_str
+                    or "tokens per minute" in error_str.lower()
+                )
+
+                if not is_rate_limit:
+                    # Not a rate limit - re-raise
+                    raise
+
+                # Handle rate limit
+                console.print(f"  [yellow]⚠ Rate limit hit (attempt {attempt + 1}/{max_retries})[/yellow]")
+
+                # Try to rotate to next key
+                if self._rotate_key():
+                    console.print(f"  [cyan]→ Retrying with new key...[/cyan]")
+                    time.sleep(2)  # Brief pause after key rotation
+                    continue
+
+                # No more keys to rotate - wait and retry
+                if attempt < max_retries - 1:
+                    console.print(f"  [yellow]→ Waiting {wait_time}s before retry...[/yellow]")
+                    for i in range(wait_time, 0, -10):
+                        console.print(f"    [dim]{i}s remaining...[/dim]", end="\r")
+                        time.sleep(10)
+                    console.print()  # Clear the countdown line
+                    console.print(f"  [cyan]→ Retrying now...[/cyan]")
+                else:
+                    console.print(f"  [red]✗ All retries exhausted[/red]")
+                    return None
+
+        return None

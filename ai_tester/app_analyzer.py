@@ -562,16 +562,16 @@ Based on the above analysis, generate a detailed prompt that includes:
 
 Return ONLY the prompt text - this will be used to generate actual test code. Be specific and detailed."""
 
-        try:
-            response = self.ai_helper.client.chat.completions.create(
-                model=self.ai_helper.MODEL,
-                max_tokens=self.MAX_TOKENS,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
+        response = self.ai_helper.call_with_retry(
+            model=self.ai_helper.MODEL,
+            max_tokens=self.MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
 
+        if response:
             ai_generated_prompt = response.choices[0].message.content
 
             # Clean the response
@@ -583,9 +583,8 @@ Return ONLY the prompt text - this will be used to generate actual test code. Be
 
             console.print(f"    [green]✓ AI prompt generated ({len(ai_generated_prompt)} chars)[/green]")
             return ai_generated_prompt
-
-        except Exception as e:
-            console.print(f"    [red]✗ Failed to generate AI prompt: {e}[/red]")
+        else:
+            console.print(f"    [red]✗ Failed to generate AI prompt after retries[/red]")
             # Fallback to a basic prompt
             return self._fallback_prompt(app_name, analysis)
 
