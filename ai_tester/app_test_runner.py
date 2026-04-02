@@ -96,7 +96,7 @@ class AppTestRunner:
 
     def run_custom_test_label(self, test_label: str, app_name: str) -> tuple:
         """
-        Run tests using a custom test label (for enhanced mode).
+        Run tests using a custom test label.
         Returns (list[TestResult], raw_output)
         """
         console.print(f"  [dim]Running tests for:[/dim] {test_label}")

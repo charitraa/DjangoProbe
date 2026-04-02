@@ -123,7 +123,7 @@ def analyze(
     # Module 2: Repo Handler
     # Outside spinner — may prompt user about cache
     console.print("\n[bold]→ Resolving project...[/bold]")
-    handler           = RepoHandler(project)
+    handler = RepoHandler(project)
     project.repo_path = handler.resolve()
     console.print(f"[green]✓ Project ready at:[/green] {project.repo_path}")
 
@@ -144,8 +144,8 @@ def analyze(
     console.print("\n[bold]→ Generating and testing app by app...[/bold]")
 
     console.print(
-        "[bold cyan]🚀 Enhanced Mode:[/bold cyan] "
-        "[dim]Using AI-powered deep app analysis[/dim]"
+        "[bold cyan]🚀 AI-Powered Analysis:[/bold cyan] "
+        "[dim]Using deep app analysis for comprehensive test generation[/dim]"
     )
 
     analyzer = ProjectAnalyzer(project.repo_path)

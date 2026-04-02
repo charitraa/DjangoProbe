@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Demonstration script for using DjangoProbe Enhanced Mode.
+Demonstration script for using DjangoProbe AI-Powered Analysis.
 
-This script shows how to programmatically use the enhanced AI-powered
+This script shows how to programmatically use the AI-powered
 test generation features of DjangoProbe.
 """
 
@@ -17,15 +17,15 @@ from ai_tester.project_analyzer import ProjectAnalyzer
 from ai_tester.enhanced_test_generator import EnhancedTestGenerator
 
 
-def demonstrate_enhanced_mode(project_path: str):
+def demonstrate_ai_analysis(project_path: str):
     """
-    Demonstrate the enhanced AI-powered test generation.
+    Demonstrate the AI-powered test generation.
 
     Args:
         project_path: Path to the Django project to analyze and test
     """
     print("=" * 70)
-    print("DjangoProbe Enhanced Mode Demonstration")
+    print("DjangoProbe AI-Powered Analysis Demonstration")
     print("=" * 70)
     print(f"\nProject: {project_path}\n")
 
@@ -45,7 +45,7 @@ def demonstrate_enhanced_mode(project_path: str):
     analysis = analyzer.analyze()
     print("✓ Project analysis complete\n")
 
-    # Step 3: Generate tests using enhanced mode
+    # Step 3: Generate tests using AI-powered analysis
     print("Step 3: Generating tests with AI-powered analysis...")
     generator = EnhancedTestGenerator(
         repo_path=project_path,
@@ -60,7 +60,7 @@ def demonstrate_enhanced_mode(project_path: str):
         print(f"  - {test_file}")
 
     print("\n" + "=" * 70)
-    print("Enhanced Mode Demo Complete!")
+    print("AI-Powered Analysis Demo Complete!")
     print("=" * 70)
     print("\nGenerated tests are located in: tests/generated/")
     print("Run them with: python manage.py test tests.generated")
@@ -127,7 +127,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="DjangoProbe Enhanced Mode Demonstration"
+        description="DjangoProbe AI-Powered Analysis Demonstration"
     )
     parser.add_argument(
         "project_path",
@@ -155,7 +155,7 @@ def main():
     if args.app:
         demonstrate_single_app_analysis(str(project_path), args.app)
     else:
-        demonstrate_enhanced_mode(str(project_path))
+        demonstrate_ai_analysis(str(project_path))
 
 
 if __name__ == "__main__":

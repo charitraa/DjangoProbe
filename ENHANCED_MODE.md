@@ -1,22 +1,12 @@
-# DjangoProbe Enhanced Mode
+# DjangoProbe AI-Powered Analysis
 
 ## Overview
 
-DjangoProbe now supports an **Enhanced Mode** that uses AI-powered deep app analysis to generate more intelligent and comprehensive test cases.
+DjangoProbe uses **AI-powered deep app analysis** to generate intelligent and comprehensive test cases. This analysis examines each Django app's code structure to create custom test cases that are tailored to the specific implementation.
 
-## Standard Mode vs Enhanced Mode
+## How the Analysis Works
 
-### Standard Mode (Default)
-- Uses manually crafted prompts for test generation
-- Generates tests directly to each app's `tests.py` file
-- Faster execution but less context-aware
-
-### Enhanced Mode (`--enhanced` flag)
-- Uses AI to deeply analyze each Django app
-- Generates custom prompts based on app-specific code analysis
-- Examines models, serializers, views, and relationships
-- Creates more comprehensive test cases with better coverage
-- Generates tests to `tests/generated/test_<app_name>.py`
+DjangoProbe follows a sophisticated 3-step process for each Django app:
 
 ## How Enhanced Mode Works
 
@@ -52,32 +42,35 @@ Using the AI-generated prompt, comprehensive test cases are created that:
 
 ### Basic Usage
 ```bash
-# Standard mode (default)
+# Analyze a local Django project
 djangoprobe /path/to/django/project
 
-# Enhanced mode with AI-powered analysis
-djangoprobe /path/to/django/project --enhanced
+# Analyze a GitHub repository
+djangoprobe https://github.com/user/repo
 
-# Short form
-djangoprobe /path/to/django/project -e
+# Analyze a GitLab repository
+djangoprobe https://gitlab.com/user/repo
+
+# Analyze using SSH URL
+djangoprobe git@github.com:user/repo.git
 ```
 
 ### Remote Repository
 ```bash
-# Enhanced mode for GitHub repository
-djangoprobe https://github.com/user/repo --enhanced
+# GitHub repository
+djangoprobe https://github.com/user/repo
 
-# Enhanced mode for GitLab repository
-djangoprobe https://gitlab.com/user/repo --enhanced
+# GitLab repository
+djangoprobe https://gitlab.com/user/repo
 
-# Enhanced mode for SSH URL
-djangoprobe git@github.com:user/repo.git --enhanced
+# SSH URL
+djangoprobe git@github.com:user/repo.git
 ```
 
-## Enhanced Mode Output
+## Analysis Output
 
 ### Console Output
-The enhanced mode provides detailed progress information:
+DjangoProbe provides detailed progress information during analysis:
 ```
 [bold cyan]============================================================[/bold cyan]
 [bold cyan]Processing App:[/bold cyan] [green]user[/green] [dim](5 endpoints)[/dim]
@@ -96,7 +89,7 @@ The enhanced mode provides detailed progress information:
 ```
 
 ### Generated Test Files
-Enhanced mode generates tests to:
+DjangoProbe generates tests to:
 ```
 /path/to/project/tests/generated/
 ├── __init__.py
@@ -150,7 +143,7 @@ The AI-generated prompt includes:
 6. **Authentication Setup**: User creation and authentication details
 7. **Relationship Handling**: How to handle FK and M2M relationships
 
-## Benefits of Enhanced Mode
+## Benefits of AI-Powered Analysis
 
 ### Better Test Coverage
 - Analyzes actual code structure
@@ -176,30 +169,31 @@ The AI-generated prompt includes:
 
 ## Architecture
 
-### New Components
+### Core Components
 
 1. **`app_analyzer.py`**: Deep app analysis module
    - Collects and parses source code
    - Extracts structured information
    - Identifies relationships and requirements
 
-2. **`enhanced_test_generator.py`**: Enhanced test generation
+2. **`enhanced_test_generator.py`**: AI-powered test generation
    - Orchestrates the analysis and generation process
    - Coordinates AI calls for prompt generation and test creation
    - Manages file writing and backups
 
-3. **Updated CLI**: Enhanced mode support
-   - `--enhanced` flag to enable enhanced mode
-   - Modified test running for generated tests
+3. **CLI Interface**: Command-line interface
+   - Detects and validates input types
+   - Manages repository handling and caching
+   - Coordinates the complete analysis pipeline
    - Progress reporting for each step
 
 ### Integration Points
 
-- **Endpoint Scanner**: Used for endpoint discovery (unchanged)
-- **Project Analyzer**: Used for global project analysis (unchanged)
-- **AI Helper**: Used for AI API calls (enhanced with analyzer integration)
-- **App Test Runner**: Modified to run tests from `tests/generated/` directory
-- **Test Generator**: New enhanced version replaces standard generator in enhanced mode
+- **Endpoint Scanner**: Used for endpoint discovery
+- **Project Analyzer**: Used for global project analysis
+- **AI Helper**: Used for AI API calls with analyzer integration
+- **App Test Runner**: Runs tests from `tests/generated/` directory
+- **Report Generator**: Creates terminal and JSON reports
 
 ## Examples
 
@@ -243,13 +237,13 @@ The AI-generated prompt includes:
 - **Analysis Time**: ~5-10 seconds per app for code analysis
 - **Prompt Generation**: ~10-20 seconds per app for AI prompt generation
 - **Test Generation**: ~20-40 seconds per app for test code generation
-- **Total Time**: Approximately 1-2 minutes per app (vs 10-20 seconds in standard mode)
+- **Total Time**: Approximately 35-70 seconds for simple apps, 60-120 seconds for complex apps
 
-The enhanced mode is slower but produces significantly better test quality.
+The analysis provides significantly better test quality through comprehensive code understanding.
 
 ## Future Enhancements
 
-Planned improvements to enhanced mode:
+Planned improvements:
 - [ ] Cache analysis results for repeated runs
 - [ ] Support for custom model managers
 - [ ] Analysis of signals and their effects
@@ -279,8 +273,8 @@ Planned improvements to enhanced mode:
 
 ## Contributing
 
-To contribute to the enhanced mode:
-1. Run tests with `--enhanced` flag
+To contribute to DjangoProbe:
+1. Run tests on various Django projects
 2. Analyze generated prompts for improvements
 3. Submit issues with sample Django projects
 4. Suggest improvements to the analysis logic

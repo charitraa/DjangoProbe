@@ -69,7 +69,7 @@ class EnhancedTestGenerator:
             file_path = self._generate_for_app(app_name, app_endpoints)
             if file_path:
                 generated_files.append(file_path)
-            time.sleep(2)  # Brief pause between apps to avoid rate limits
+            time.sleep(2)  # Brief _setup_output_dirpause between apps to avoid rate limits
 
         return generated_files
 
@@ -163,33 +163,33 @@ class EnhancedTestGenerator:
         # Build the system prompt
         system_prompt = """You are an expert Django and DRF test engineer. You write clean, realistic, well-documented Django TestCase code.
 
-Your task:
-1. Read the detailed analysis prompt provided
-2. Generate complete, comprehensive test cases for all endpoints
-3. Follow all instructions in the analysis prompt exactly
-4. Include proper setup, authentication, and assertions
-5. Test both success and failure cases
-6. Include edge cases and validation testing
+        Your task:
+        1. Read the detailed analysis prompt provided
+        2. Generate complete, comprehensive test cases for all endpoints
+        3. Follow all instructions in the analysis prompt exactly
+        4. Include proper setup, authentication, and assertions
+        5. Test both success and failure cases
+        6. Include edge cases and validation testing
 
-Return ONLY valid Python code — no markdown fences, no explanation, no preamble. Code must be directly writable to a .py file and executable."""
+        Return ONLY valid Python code — no markdown fences, no explanation, no preamble. Code must be directly writable to a .py file and executable."""
 
         # Build the user prompt with the AI-generated analysis
         user_prompt = f"""Generate Django test cases for the "{app_name}" app.
 
-## Detailed Analysis and Instructions:
-{ai_prompt}
+        ## Detailed Analysis and Instructions:
+        {ai_prompt}
 
-## Additional Project Context:
-"""
+        ## Additional Project Context:
+        """
 
         # Add auth information if available
         if self.analysis:
             user_prompt += f"""
-- Auth type: {self.analysis.auth_type}
-- Login URL: {self.analysis.login_url}
-- Auth module: {self.analysis.auth_module}
-- Safe User fields: {', '.join(self.analysis.safe_user_fields)}
-"""
+        - Auth type: {self.analysis.auth_type}
+        - Login URL: {self.analysis.login_url}
+        - Auth module: {self.analysis.auth_module}
+        - Safe User fields: {', '.join(self.analysis.safe_user_fields)}
+        """
 
         # Add endpoint list
         user_prompt += "\n## Endpoints to Test:\n"
@@ -199,32 +199,32 @@ Return ONLY valid Python code — no markdown fences, no explanation, no preambl
 
         # Add import guidance
         user_prompt += """
-## Import Guidelines:
-- Use: `from django.test import TestCase, Client`
-- Use: `import json`
-- Import models from the app's models module (not relative imports)
-- DO NOT use relative imports like `from .models import ...`
-- DO NOT import serializers or services in tests
+        ## Import Guidelines:
+        - Use: `from django.test import TestCase, Client`
+        - Use: `import json`
+        - Import models from the app's models module (not relative imports)
+        - DO NOT use relative imports like `from .models import ...`
+        - DO NOT import serializers or services in tests
 
-## Test Structure Guidelines:
-1. Create a test class that inherits from TestCase
-2. Implement setUp() method with authentication setup
-3. Create separate test methods for each endpoint and HTTP method
-4. Include meaningful test method names (e.g., test_create_user_success, test_get_list_unauthorized)
-5. Use assertEqual, assertIn, assertTrue with descriptive messages
-6. Include both success and failure test cases
+        ## Test Structure Guidelines:
+        1. Create a test class that inherits from TestCase
+        2. Implement setUp() method with authentication setup
+        3. Create separate test methods for each endpoint and HTTP method
+        4. Include meaningful test method names (e.g., test_create_user_success, test_get_list_unauthorized)
+        5. Use assertEqual, assertIn, assertTrue with descriptive messages
+        6. Include both success and failure test cases
 
-## Response Codes:
-- 200: GET success
-- 201: POST success (created)
-- 204: DELETE success
-- 400: Bad request (validation error)
-- 401: Unauthorized
-- 403: Forbidden
-- 404: Not found
-- 405: Method not allowed
+        ## Response Codes:
+        - 200: GET success
+        - 201: POST success (created)
+        - 204: DELETE success
+        - 400: Bad request (validation error)
+        - 401: Unauthorized
+        - 403: Forbidden
+        - 404: Not found
+        - 405: Method not allowed
 
-Generate the complete test file now."""
+        Generate the complete test file now."""
 
         console.print(f"    [dim]Calling AI model...[/dim]")
         response = self.ai_helper.call_with_retry(

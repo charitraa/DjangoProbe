@@ -5,8 +5,8 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 ## Features
 
 - **Automatic Endpoint Discovery**: Scans Django projects to find all API endpoints
-- **AI-Powered Test Generation**: Uses Groq API to generate comprehensive test cases
-- **Enhanced Mode**: Deep app analysis with AI-generated custom prompts for better test coverage
+- **AI-Powered Deep App Analysis**: Uses Groq API to analyze models, serializers, and views
+- **Intelligent Test Generation**: Generates comprehensive test cases based on code analysis
 - **Per-App Testing**: Generates and runs tests for each Django app independently
 - **Detailed Reporting**: Provides terminal reports with Rich formatting and JSON exports
 - **Multiple Input Sources**: Supports local paths, GitHub, GitLab, and SSH URLs
@@ -60,29 +60,36 @@ djangoprobe https://gitlab.com/username/repository
 djangoprobe git@github.com:username/repository.git
 ```
 
-### Enhanced Mode
+### AI-Powered Analysis
 
-Use `--enhanced` flag for AI-powered deep app analysis:
+DjangoProbe automatically performs deep app analysis:
 
 ```bash
-djangoprobe /path/to/project --enhanced
+# Analyze a local Django project
+djangoprobe /path/to/your/django/project
 
-# Short form
-djangoprobe /path/to/project -e
+# Analyze a GitHub repository
+djangoprobe https://github.com/username/repository
+
+# Analyze a GitLab repository
+djangoprobe https://gitlab.com/username/repository
+
+# Analyze using SSH URL
+djangoprobe git@github.com:username/repository.git
 ```
 
-**Enhanced Mode Benefits:**
+**AI Analysis Features:**
 - Deep analysis of models, serializers, and views
 - AI-generated custom prompts for each app
 - Better understanding of relationships and constraints
 - More comprehensive test coverage
 - App-specific test generation
 
-For detailed information about Enhanced Mode, see [ENHANCED_MODE.md](ENHANCED_MODE.md).
+For detailed information about the analysis process, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md).
 
 ## How It Works
 
-DjangoProbe follows a modular 6-stage pipeline:
+DjangoProbe follows a modular pipeline with AI-powered deep app analysis:
 
 ### 1. Input Detection & Validation
 - Detects input type (local path, GitHub URL, GitLab URL, SSH URL)
@@ -105,14 +112,9 @@ DjangoProbe follows a modular 6-stage pipeline:
 - Discovers safe User model fields (excludes ManyToMany for create_user())
 - Identifies roles, FK fields, M2M fields
 
-### 5. Test Generation (Standard Mode)
-- Groups endpoints by Django app
-- Generates per-app test files using AI via Groq API
-- Writes tests to `repo/tests/generated/test_<app_name>.py`
-- Uses `AIHelper` for intelligent test case generation
-
-### Test Generation (Enhanced Mode)
+### 5. Deep App Analysis & Test Generation
 - Deeply analyzes each Django app using `AppAnalyzer`
+- Parses models.py, serializers.py, views.py, urls.py
 - Generates AI-powered custom prompts based on code analysis
 - Examines models, serializers, views, and relationships
 - Creates comprehensive test cases with better coverage
@@ -139,16 +141,15 @@ DjangoProbe/
 │   ├── endpoint_scanner.py         # Endpoint discovery
 │   ├── repo_handler.py             # Repository management
 │   ├── project_analyzer.py         # Global project analysis
-│   ├── app_analyzer.py             # Enhanced: Deep app analysis
-│   ├── test_generator.py           # Standard test generation
-│   ├── enhanced_test_generator.py  # Enhanced test generation
+│   ├── app_analyzer.py             # Deep app analysis
+│   ├── enhanced_test_generator.py  # AI-powered test generation
 │   ├── ai_helper.py               # AI API communication
 │   ├── app_test_runner.py         # Test execution
 │   ├── report.py                  # Report generation
 │   └── models.py                 # Data models
 ├── examples/
-│   └── enhanced_mode_demo.py      # Enhanced mode demo
-├── ENHANCED_MODE.md              # Enhanced mode documentation
+│   └── enhanced_mode_demo.py      # Analysis demo
+├── IMPLEMENTATION_SUMMARY.md      # Implementation details
 ├── CLAUDE.md                     # Claude Code instructions
 └── requirements.txt               # Python dependencies
 ```
@@ -193,31 +194,14 @@ DjangoProbe/
 
 ## Programmatic Usage
 
-### Standard Mode
-
-```python
-from ai_tester import EndpointScanner, ProjectAnalyzer, TestGenerator
-
-# Scan endpoints
-scanner = EndpointScanner("/path/to/project")
-endpoints = scanner.scan()
-
-# Analyze project
-analyzer = ProjectAnalyzer("/path/to/project")
-analysis = analyzer.analyze()
-
-# Generate tests
-generator = TestGenerator("/path/to/project", endpoints, analysis)
-test_files = generator.generate()
-```
-
-### Enhanced Mode
+### Complete Workflow
 
 ```python
 from ai_tester import (
     EndpointScanner,
     ProjectAnalyzer,
-    EnhancedTestGenerator
+    EnhancedTestGenerator,
+    AppTestRunner
 )
 
 # Scan endpoints
@@ -228,13 +212,18 @@ endpoints = scanner.scan()
 analyzer = ProjectAnalyzer("/path/to/project")
 analysis = analyzer.analyze()
 
-# Generate tests with enhanced analysis
+# Generate tests with AI-powered analysis
 generator = EnhancedTestGenerator(
     "/path/to/project",
     endpoints,
     analysis
 )
 test_files = generator.generate()
+
+# Run tests
+runner = AppTestRunner("/path/to/project")
+for test_file in test_files:
+    results = runner.run_custom_test_label(test_file)
 ```
 
 ### Single App Analysis
@@ -349,10 +338,9 @@ Optional:
 ### CLI Options
 
 ```bash
-djangoprobe SOURCE --enhanced
+djangoprobe SOURCE
 
 Options:
-  --enhanced, -e    Enable AI-powered deep app analysis
   --help, -h         Show help message and exit
 ```
 
@@ -372,21 +360,26 @@ Options:
 **Issue**: Authentication fails in tests
 - **Solution**: Verify login URL is correctly detected and User model fields match
 
-**Issue**: Enhanced mode is slow
-- **Solution**: This is expected - enhanced mode performs deep analysis. Use standard mode for faster execution.
+**Issue**: Analysis takes a long time
+- **Solution**: This is expected - DjangoProbe performs deep code analysis for comprehensive test coverage. The time varies based on app complexity.
 
 ## Performance
 
-### Standard Mode
-- Analysis: ~5-10 seconds total
-- Test Generation: ~10-20 seconds per app
-- Execution: ~2-5 seconds per app
+### Analysis & Generation (per app)
+- Deep App Analysis: ~5-10 seconds
+- AI Prompt Generation: ~10-20 seconds
+- Test Case Generation: ~20-40 seconds
+- Execution: ~2-5 seconds
 
-### Enhanced Mode
-- Analysis: ~5-10 seconds per app
-- Prompt Generation: ~10-20 seconds per app
-- Test Generation: ~20-40 seconds per app
-- Execution: ~2-5 seconds per app
+### Total Time per App
+- Simple apps: ~35-70 seconds
+- Complex apps: ~60-120 seconds
+
+**Note**: Performance varies based on:
+- App complexity (number of models, serializers, views)
+- Codebase size
+- Network latency for AI API calls
+- Groq API rate limits
 
 ## Contributing
 
@@ -407,7 +400,7 @@ MIT License - see LICENSE file for details
 
 For issues, questions, or contributions:
 - GitHub Issues: https://github.com/yourusername/djangoprobe/issues
-- Documentation: See [ENHANCED_MODE.md](ENHANCED_MODE.md) for enhanced mode details
+- Documentation: See [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for implementation details
 
 ## Roadmap
 
