@@ -1,6 +1,5 @@
 import os
 import re
-import time
 from pathlib import Path
 from openai import OpenAI
 from rich.console import Console
@@ -12,7 +11,7 @@ console = Console()
 
 class AIHelper:
     """
-    Communicates with Groq API to generate intelligent test cases.
+    AI API client for Groq communication.
 
     Groq free tier:
       - 14,400 requests per day
@@ -20,8 +19,8 @@ class AIHelper:
       - Much faster than OpenRouter free models
 
     Usage:
-        helper  = AIHelper(repo_path)
-        content = helper.generate_tests(app_name, endpoints)
+        helper = AIHelper(repo_path)
+        response = helper.client.chat.completions.create(...)
     """
 
     # Best models on Groq for code generation
@@ -75,6 +74,7 @@ class AIHelper:
           f"  [dim]Found {len(self.installed_apps)} "
           f"project app(s) in INSTALLED_APPS[/dim]"
       )
+
     def _build_client(self, api_key: str) -> OpenAI:
       """Build OpenAI client with given key."""
       return OpenAI(
@@ -99,76 +99,7 @@ class AIHelper:
             f"  [cyan]↻ Rotated to key {next_index + 1}/{len(self.api_keys)}[/cyan]"
         )
         return True
-    
-    #  PUBLIC
-    def generate_tests(self, app_name, endpoints):
-        console.print(
-            f"  [dim]→ Groq generating tests for:[/dim] "
-            f"[cyan]{app_name}[/cyan]"
-        )
 
-        context  = self._collect_context(app_name)
-        prompt   = self._build_prompt(app_name, endpoints, context)
-        messages = [
-            {"role": "system", "content": self._system_prompt()},
-            {"role": "user",   "content": prompt},
-        ]
-
-        for model in [self.MODEL] + self.FALLBACK_MODELS:
-            for attempt in range(len(self.api_keys) * 2):  # enough attempts for all keys
-                try:
-                    with console.status(
-                        f"  [dim]Calling {model} "
-                        f"[key {self.current_key_index + 1}]...[/dim]",
-                        spinner="dots"
-                    ):
-                        response = self.client.chat.completions.create(
-                            model      = model,
-                            max_tokens = self.MAX_TOKENS,
-                            messages   = messages,
-                        )
-
-                    content = response.choices[0].message.content
-                    if content:
-                        return content
-
-                except Exception as e:
-                    err = str(e).lower()
-
-                    if "decommissioned" in err or "model_decommissioned" in err:
-                        console.print(
-                            f"  [yellow]⚠ Decommissioned:[/yellow] {model} — skipping"
-                        )
-                        break  # next model
-
-                    elif "429" in err or "rate limit" in err:
-                        console.print(
-                            f"  [yellow]⚠ Rate limit on key "
-                            f"{self.current_key_index + 1}[/yellow]"
-                        )
-                        # Try rotating key first
-                        if self._rotate_key():
-                            continue  # retry with new key immediately
-                        else:
-                            # With this:
-                            for remaining in range(60, 0, -1):
-                                console.print(
-                                    f"  [yellow]⚠ All keys rate limited — "
-                                    f"retrying in {remaining}s...[/yellow]",
-                                    end="\r"   # ← overwrite same line
-                                )
-                                time.sleep(1)
-                            console.print(
-                                "  [green]✓ Rate limit cleared — retrying...[/green]    "
-                            )
-
-                    else:
-                        console.print(f"  [red]✗ Groq error:[/red] {e}")
-                        break  # next model
-
-        console.print("[red]✗ All models and keys failed.[/red]")
-        return None
-    
     #  INSTALLED_APPS PARSER
     def _parse_installed_apps(self) -> list[dict]:
         """Read INSTALLED_APPS from settings.py."""
@@ -246,287 +177,7 @@ class AIHelper:
                 return app["app_dir"]
         return None
 
-    #  CONTEXT COLLECTOR
-    def _collect_context(self, app_name: str) -> dict[str, str]:
-        """
-        Dynamically read ALL relevant .py files from the app.
-        Skip: migrations, tests, admin, apps, __init__
-        """
-        context: dict[str, str] = {}
-
-        app_dir = self.get_app_dir(app_name)
-        if not app_dir:
-            console.print(
-                f"  [yellow]⚠ App dir not found:[/yellow] {app_name}"
-            )
-            return context
-
-        # Files to SKIP — not useful for test generation
-        skip_files = {
-            "__init__.py",
-            "admin.py",
-            "apps.py",
-            "tests.py",
-            "migrations",
-        }
-
-        # Priority files — read these first (most important)
-        priority_files = [
-            "models.py",
-            "serializers.py",
-            "views.py",
-            "urls.py",
-        ]
-
-        # Secondary files — read if they exist
-        secondary_files = [
-            "services.py",
-            "repository.py",
-            "permissions.py",
-            "filters.py",
-            "utils.py",
-            "signals.py",
-            "forms.py",
-            "tasks.py",
-        ]
-
-        def read_file(filepath: Path, label: str, max_chars: int) -> None:
-            if filepath.exists():
-                content = filepath.read_text(errors="ignore")
-                context[label] = self._truncate(content, max_chars=max_chars)
-                console.print(
-                    f"    [dim]Read:[/dim] {app_name}/{label} "
-                    f"[dim]({len(content)} chars)[/dim]"
-                )
-
-        # Read priority files with more tokens
-        for fname in priority_files:
-            read_file(app_dir / fname, fname, max_chars=4000)
-
-        # Read secondary files with fewer tokens
-        for fname in secondary_files:
-            read_file(app_dir / fname, fname, max_chars=2000)
-
-        # Catch any OTHER .py files not in our list
-        known = set(priority_files + secondary_files + list(skip_files))
-        for py_file in sorted(app_dir.glob("*.py")):
-            if py_file.name not in known:
-                read_file(py_file, py_file.name, max_chars=1000)
-                console.print(
-                    f"    [dim]Found extra file:[/dim] {py_file.name}"
-                )
-
-        # Read auth app context (login endpoint)
-        auth_dir = self._find_auth_app()
-        if auth_dir and auth_dir != app_dir:
-            auth_app_name = auth_dir.name
-            console.print(
-                f"    [dim]Reading auth app:[/dim] {auth_app_name}/"
-            )
-            for fname in ["models.py", "serializers.py", "views.py", "urls.py"]:
-                fp = auth_dir / fname
-                if fp.exists():
-                    content = fp.read_text(errors="ignore")
-                    context[f"auth_{fname}"] = self._truncate(
-                        content, max_chars=2000
-                    )
-                    console.print(
-                        f"    [dim]Read:[/dim] {auth_app_name}/{fname} "
-                        f"[dim](auth context)[/dim]"
-                    )
-
-        return context
-
-    #  PROMPTS
-    def _system_prompt(self) -> str:
-        return (
-            "You are an expert Django and DRF test engineer. "
-            "You write clean, realistic, well-documented Django TestCase code. "
-            "Return ONLY valid Python code — no markdown fences, "
-            "no explanation, no preamble. "
-            "Code must be directly writable to a .py file and executable."
-        )
-    
-    # Add this method to AIHelper class
-    def _find_root_urls(self) -> Path | None:
-        """Find root urls.py — needed to detect login URL prefix."""
-        settings_file = self._find_settings()
-        if settings_file:
-            try:
-                content = settings_file.read_text(errors="ignore")
-                match   = re.search(
-                    r'ROOT_URLCONF\s*=\s*["\']([^"\']+)["\']', content
-                )
-                if match:
-                    url_path = self.repo_path / Path(
-                        match.group(1).replace(".", "/") + ".py"
-                    )
-                    if url_path.exists():
-                        return url_path
-            except Exception:
-                pass
-
-        # Fallback — find urls.py with most include() calls
-        best_candidate = None
-        best_score     = 0
-
-        for candidate in sorted(self.repo_path.rglob("urls.py")):
-            if self._should_skip(candidate):
-                continue
-            try:
-                content = candidate.read_text(errors="ignore")
-            except Exception:
-                continue
-            if "urlpatterns" not in content:
-                continue
-            score = content.count("include(")
-            if score > best_score:
-                best_score     = score
-                best_candidate = candidate
-
-        return best_candidate
-
-    def _build_prompt(self, app_name, endpoints, context):
-
-        if self.analysis:
-            login_url     = self.analysis.login_url
-            auth_module   = self.analysis.auth_module
-            auth_app_name = self.analysis.auth_app_name
-            safe_fields   = self.analysis.safe_user_fields
-        else:
-            # fallback if no analysis
-            auth_dir      = self._find_auth_app()
-            login_url     = self._find_login_url(auth_dir)
-            auth_module   = "apps.user"
-            auth_app_name = "user"
-            safe_fields   = ["email", "full_name"]
-
-        app_module = next(
-        (app["module"] for app in self.installed_apps
-         if app["app_name"] == app_name),
-        f"apps.{app_name}"  # fallback
-        )
-        # Build safe create_user example from safe_fields
-        safe_create = "\n        ".join([
-            f'{f} = "test_{f}@example.com",' if "email" in f
-            else f'{f} = "testpass123",' if "password" in f
-            else f'{f} = "Test User",' if "name" in f
-            else f'{f} = "test_value",'
-            for f in safe_fields[:4]  # max 4 fields
-        ])
-
-        # Build FK setup code
-        fk_imports = ""
-        fk_creates = ""
-        fk_in_create_user = ""
-
-        if self.analysis and self.analysis.user_fk_fields:
-            for fk in self.analysis.user_fk_fields:
-                field = fk["field"]
-                model = fk["model"]
-                module = fk["module"]
-                kwargs = ", ".join(f'{k}="{v}"' for k, v in fk["kwargs"].items())
-                fk_imports += f"from {module}.models import {model}\n"
-                fk_creates += f"        self.{field} = {model}.objects.create({kwargs})\n"
-                fk_in_create_user += f"                {field}=self.{field},\n"
-
-        # Build M2M setup code
-        m2m_setup = ""
-        if self.analysis and self.analysis.user_m2m_fields:
-            for m2m in self.analysis.user_m2m_fields:
-                m2m_setup += f"        # self.user.{m2m}.set([])  ← set after creation if needed\n"
-
-        endpoint_lines = [
-            f"  - [{', '.join(ep.http_methods)}]  "
-            f"{ep.url_pattern}  "
-            f"view={ep.view_name}  "
-            f"({'requires auth' if ep.requires_auth else 'public'})"
-            for ep in endpoints
-        ]
-
-        context_sections = [
-            f"### {fname}\n```python\n{code}\n```"
-            for fname, code in context.items()
-        ]
-
-        return f"""
-    Generate a complete Django test file for the "{app_name}" app.
-
-    ## IMPORTS
-    from django.test import TestCase, Client
-    import json
-    from {app_module}.models import <ModelName>
-    from {auth_module}.models import User
-
-    ## FORBIDDEN IMPORTS — never use these:
-    # from .models / .serializers / .services import ...   (no relative imports)
-    # from rest_framework import status                     (use plain integers)
-    # from {app_module}.serializers import ...
-    # from {app_module}.services import ...
-
-    ## SETUP RULES
-    1. Never pass `id=` to create_user() or objects.create() — Django auto-generates UUIDs
-    2. Always include `password= and confirm_password=` in create_user() — omitting it causes 401 on login
-    3. Create FK-related objects BEFORE the User
-    4. Set M2M fields AFTER User creation using .set()
-    5. Never pass FK fields as strings — always pass the object
-
-    ## ADMIN USER SETUP
-    ```python
-    class AppTests(TestCase):
-        def setUp(self):
-            self.client = Client()
-            {fk_creates}
-            self.user = User.objects.create_user(
-                {safe_create}
-                {fk_in_create_user}
-                is_staff=True,
-                is_superuser=True,
-            )
-            {m2m_setup}
-            response = self.client.post(
-                "{login_url}",
-                data=json.dumps({{
-                    "email": "test@example.com",
-                    "password": "testpass123"
-                }}),
-                content_type="application/json"
-            )
-            token = response.json().get("data", {{}}).get("access", "")
-            self.auth_headers = {{"HTTP_AUTHORIZATION": f"Bearer {{token}}"}}
-    ```
-
-    ## READING GUIDE — read ALL files before writing tests:
-    1. models.py       → exact field names and types
-    2. serializers.py  → required fields for POST/PUT
-    3. views.py        → permission_classes (auth needed?)
-    4. urls.py         → exact URL patterns and path params
-    5. services/repo   → understand data processing
-    6. auth_models.py  → exact User model fields for setUp
-    7. auth_urls.py    → login endpoint URL
-
-    ## TEST RULES
-    - Use ONLY field names and model classes visible in the source code
-    - Use TestCase only — no APITestCase
-    - Use plain status codes: 200, 201, 400, 401, 403, 404, 405
-    - For logout: use assertIn([200, 205]) not assertEqual(200)
-    - Add msg=f"Got {{response.status_code}}: {{response.content}}" to all assertions
-
-    ## PROJECT CONTEXT
-    - Auth app:  {auth_app_name}
-    - Login URL: {login_url}
-    - App module: {app_module}
-    - Safe User fields: {', '.join(safe_fields)}
-
-    ## ENDPOINTS TO TEST
-    {chr(10).join(endpoint_lines)}
-
-    ## SOURCE CODE
-    {chr(10).join(context_sections)}
-
-    Return ONLY Python code. No markdown. No explanation.
-    """
-    #  HELPERS
+    #  HELPER METHODS FOR SETTINGS
     def _find_settings(self) -> Path | None:
         for candidate in self.repo_path.rglob("settings.py"):
             if not self._should_skip(candidate):
@@ -536,82 +187,3 @@ class AIHelper:
     def _should_skip(self, path: Path) -> bool:
         skip = {"venv", "env", "site-packages", "__pycache__", ".git"}
         return any(p in path.parts for p in skip)
-
-    def _truncate(self, text: str, max_chars: int) -> str:
-        if len(text) <= max_chars:
-            return text
-        return text[:max_chars] + "\n\n# ... (truncated)"
-    
-    def _find_auth_app(self) -> Path | None:
-        """
-        Find auth app by reading AUTH_USER_MODEL from settings.py
-        
-        AUTH_USER_MODEL = 'apps.user.User'  → apps/user/
-        AUTH_USER_MODEL = 'accounts.User'   → accounts/
-        AUTH_USER_MODEL = 'core.User'       → core/
-        """
-        settings_file = self._find_settings()
-        if not settings_file:
-            return None
-
-        content = settings_file.read_text(errors="ignore")
-
-        # Find AUTH_USER_MODEL = 'app.Model'
-        match = re.search(
-            r'AUTH_USER_MODEL\s*=\s*["\']([^"\']+)["\']',
-            content
-        )
-        if not match:
-            return None
-
-        # 'apps.user.User' → 'apps.user' → apps/user/
-        auth_model = match.group(1)          # e.g. "apps.user.User"
-        parts      = auth_model.split(".")   # ["apps", "user", "User"]
-        app_module = ".".join(parts[:-1])    # "apps.user"
-
-        return self._resolve_app_dir(app_module)
-    
-    def _find_login_url(self, auth_dir: Path | None) -> str:
-        """
-        Find login URL by reading auth app urls.py
-        Returns something like /api/user/login/
-        """
-        if not auth_dir:
-            return "/api/user/login/"
-
-        urls_file = auth_dir / "urls.py"
-        if not urls_file.exists():
-            return "/api/user/login/"
-
-        content = urls_file.read_text(errors="ignore")
-
-        # Look for login pattern
-        match = re.search(
-            r'path\(["\']([^"\']*login[^"\']*)["\']',
-            content,
-            re.IGNORECASE
-        )
-
-        if match:
-            # Get the prefix from root urls.py too
-            prefix = self._find_app_url_prefix(auth_dir.name)
-            return f"/{prefix}{match.group(1)}".replace("//", "/")
-
-        return "/api/user/login/"
-
-    def _find_app_url_prefix(self, app_name: str) -> str:
-        """Find URL prefix for an app from root urls.py"""
-        root_urls = self._find_root_urls()
-        if not root_urls:
-            return ""
-
-        content = root_urls.read_text(errors="ignore")
-
-        # path('api/user/', include('apps.user.urls'))
-        match = re.search(
-            rf'path\(["\']([^"\']+)["\'],\s*include\(["\'][^"\']*{app_name}[^"\']*["\']',
-            content
-        )
-        if match:
-            return match.group(1)
-        return ""

@@ -17,6 +17,8 @@ class AppTestRunner:
     """
 
     VENV_DIR = ".probe_venv"
+    APP_TIMEOUT = 120  # 2 minutes per app for test execution
+    ERROR_TIMEOUT = 300  # 5 minutes for error processing
 
     def __init__(self, repo_path: str):
         self.repo_path  = Path(repo_path)
@@ -71,7 +73,7 @@ class AppTestRunner:
                 cwd = str(self.repo_path),
                 capture_output = True,
                 text = True,
-                timeout = 120,  # 2 min per app
+                timeout=self.APP_TIMEOUT,  # 2 min per app
                 env = env,
             )
 
@@ -85,6 +87,61 @@ class AppTestRunner:
                     console.print(f"  [{color}]{line}[/{color}]")
 
             results = self._parse_results(output, app_module)
+            return results, output
+
+        except subprocess.TimeoutExpired:
+            return [], "ERROR: Timeout"
+        except Exception as e:
+            return [], f"ERROR: {e}"
+
+    def run_custom_test_label(self, test_label: str, app_name: str) -> tuple:
+        """
+        Run tests using a custom test label (for enhanced mode).
+        Returns (list[TestResult], raw_output)
+        """
+        console.print(f"  [dim]Running tests for:[/dim] {test_label}")
+
+        env = os.environ.copy()
+        env_file = self.repo_path / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:]
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    env[key.strip()] = value.strip().strip('"').strip("'")
+
+        try:
+            result = subprocess.run(
+                [
+                    str(self.python),
+                    "manage.py",
+                    "test",
+                    test_label,
+                    "--verbosity=2",
+                    "--keepdb",
+                ],
+                cwd = str(self.repo_path),
+                capture_output = True,
+                text = True,
+                timeout=self.APP_TIMEOUT,  # 2 min per app
+                env = env,
+            )
+
+            output = result.stderr + "\n" + result.stdout
+
+            for line in output.split("\n"):
+                if line.startswith("Ran "):
+                    console.print(f"  [dim]{line}[/dim]")
+                if line.startswith("OK") or line.startswith("FAILED"):
+                    color = "green" if line.startswith("OK") else "red"
+                    console.print(f"  [{color}]{line}[/{color}]")
+
+            # Parse results with the custom test label
+            results = self._parse_results(output, test_label)
             return results, output
 
         except subprocess.TimeoutExpired:
@@ -292,15 +349,6 @@ class AppTestRunner:
         if "patch" in name:                       return ["PATCH"]
         return ["GET"]
 
-    def _code_from_error(self, error_msg: str | None) -> int:
-        """Extract actual status code from error message."""
-        if not error_msg:
-            return 200
-        match = re.search(r"(\d{3}) != \d{3}", error_msg)
-        if match:
-            return int(match.group(1))
-        return 0
-
     def _extract_actual_code(self, error_msg: str | None) -> int:
         """Extract actual status code from error message."""
         if not error_msg:
@@ -414,6 +462,6 @@ class AppTestRunner:
             "--disable-pip-version-check"],
             cwd=str(self.repo_path),
             capture_output=True,
-            timeout=300,
+            timeout=self.ERROR_TIMEOUT,
         )
         console.print("  [green]✓ Dependencies installed[/green]")

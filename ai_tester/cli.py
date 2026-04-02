@@ -7,12 +7,14 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from ai_tester.models import InputType, ProjectSource
 from ai_tester.repo_handler import RepoHandler
 from ai_tester.endpoint_scanner import EndpointScanner
-from ai_tester.test_generator import TestGenerator
 from ai_tester.report import ReportGenerator
 from ai_tester.project_analyzer import ProjectAnalyzer
-from ai_tester.app_test_runner  import AppTestRunner
+from ai_tester.app_test_runner import AppTestRunner
+from ai_tester.enhanced_test_generator import EnhancedTestGenerator
 
-app = typer.Typer(help="AI-powered Django API test runner")
+app = typer.Typer(
+    help="AI-powered Django API test runner with intelligent test generation"
+)
 console = Console()
 
 
@@ -141,13 +143,19 @@ def analyze(
     # ── Module 4+5: Per-app loop
     console.print("\n[bold]→ Generating and testing app by app...[/bold]")
 
+    console.print(
+        "[bold cyan]🚀 Enhanced Mode:[/bold cyan] "
+        "[dim]Using AI-powered deep app analysis[/dim]"
+    )
+
     analyzer = ProjectAnalyzer(project.repo_path)
     analysis = analyzer.analyze()
     all_results = []
 
-    # Group endpoints by app
-    generator   = TestGenerator(project.repo_path, endpoints, analysis)
-    app_groups  = generator._group_by_app()
+    # Always use EnhancedTestGenerator
+    generator = EnhancedTestGenerator(project.repo_path, endpoints, analysis)
+
+    app_groups = generator._group_by_app()
 
     runner = AppTestRunner(project.repo_path)
 
@@ -157,20 +165,21 @@ def analyze(
             f"\n[bold cyan]── App: {app_name} ──[/bold cyan]"
         )
 
-        # Step 1 — Generate test into app's own tests.py
-        test_file = generator.generate_for_app_inplace(
-            app_name, app_endpoints
-        )
+        # Step 1 — Generate test
+        test_file = generator.generate_for_app(app_name, app_endpoints)
+
         if not test_file:
             console.print(f"  [red]✗ Skipping {app_name}[/red]")
             continue
 
         # Step 2 — Run tests for this app only
-        results, run_output = runner.run_single_app(app_name)
+        test_label = f"tests.generated.test_{app_name}"
+        results, run_output = runner.run_custom_test_label(test_label, app_name)
 
         if run_output.startswith("ERROR:"):
             console.print(f"  [red]✗ Runner error:[/red] {run_output}")
             continue
+
         # Step 3 — Check results
         errors = [r for r in results if r.status in ("ERROR", "FAILED")]
 
