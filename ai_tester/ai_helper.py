@@ -1,104 +1,54 @@
 import os
 import re
 from pathlib import Path
-from openai import OpenAI
 from rich.console import Console
 from dotenv import load_dotenv
+from typing import Optional
 
 load_dotenv()
 console = Console()
 
+# Import the new multi-provider system
+from .providers.manager import ProviderManager
+
 
 class AIHelper:
     """
-    AI API client for Groq communication.
+    AI API client with multi-provider support.
 
-    Groq free tier:
-      - 14,400 requests per day
-      - 30 requests per minute
-      - Much faster than OpenRouter free models
+    Supports multiple AI providers with automatic fallback:
+      - Groq: Fast inference, free tier
+      - Ollama: Completely free, local models
+      - Together AI: Good free tier
 
     Usage:
         helper = AIHelper(repo_path)
-        response = helper.client.chat.completions.create(...)
+        response = helper.client.generate_text(messages)
     """
-
-    # Best models on Groq for code generation
-    MODEL = "llama-3.3-70b-versatile"
-
-    FALLBACK_MODELS = [
-        "llama-3.1-8b-instant",          # fast, still works
-        "gemma2-9b-it",                  # Google model on Groq, works
-    ]
 
     MAX_TOKENS = 8096
 
     def __init__(self, repo_path: str, analysis=None):
       self.repo_path = Path(repo_path)
       self.analysis  = analysis
-      # Load all 3 keys
-      self.api_keys = []
-      for i in range(1, 4):
-          key = os.environ.get(f"GROQ_API_KEY_{i}")
-          if key:
-              self.api_keys.append(key)
 
-      # Fallback to single key if user has only one
-      if not self.api_keys:
-          single = os.environ.get("GROQ_API_KEY")
-          if single:
-              self.api_keys.append(single)
-
-      if not self.api_keys:
-          console.print(
-              "[red]✗ No Groq API keys found![/red]\n"
-              "  Add to .env:\n"
-              "  GROQ_API_KEY_1='gsk_...'\n"
-              "  GROQ_API_KEY_2='gsk_...'\n"
-              "  GROQ_API_KEY_3='gsk_...'"
-          )
+      # Initialize the multi-provider manager
+      try:
+          self.provider_manager = ProviderManager(repo_path, analysis)
+          # Set client to manager for backward compatibility
+          self.client = self.provider_manager
+          self.MODEL = self.provider_manager.get_current_provider().get_model_info()["current_model"]
+      except Exception as e:
+          console.print(f"[red]✗ Failed to initialize AI providers: {e}[/red]")
           raise SystemExit(1)
 
-      self.current_key_index = 0  # start with key 1
-
-      # Build client with first key
-      self.client = self._build_client(self.api_keys[0])
-
-      console.print(
-          f"  [dim]AI Provider:[/dim] [cyan]Groq[/cyan] "
-          f"[dim]({self.MODEL}) — {len(self.api_keys)} key(s) loaded[/dim]"
-      )
-
+      # Parse installed apps (existing functionality)
       self.installed_apps = self._parse_installed_apps()
       console.print(
           f"  [dim]Found {len(self.installed_apps)} "
           f"project app(s) in INSTALLED_APPS[/dim]"
       )
 
-    def _build_client(self, api_key: str) -> OpenAI:
-      """Build OpenAI client with given key."""
-      return OpenAI(
-          api_key  = api_key,
-          base_url = "https://api.groq.com/openai/v1",
-      )
-
-    def _rotate_key(self) -> bool:
-        """
-        Rotate to next API key.
-        Returns True if rotated, False if no more keys.
-        """
-        next_index = self.current_key_index + 1
-
-        if next_index >= len(self.api_keys):
-            return False  # no more keys
-
-        self.current_key_index = next_index
-        self.client = self._build_client(self.api_keys[next_index])
-
-        console.print(
-            f"  [cyan]↻ Rotated to key {next_index + 1}/{len(self.api_keys)}[/cyan]"
-        )
-        return True
 
     #  INSTALLED_APPS PARSER
     def _parse_installed_apps(self) -> list[dict]:
@@ -190,59 +140,46 @@ class AIHelper:
 
     def call_with_retry(self, **kwargs) -> any:
         """
-        Call AI API with retry logic for rate limits.
+        Call AI API with retry logic using multi-provider system.
 
         Handles:
-        - Rate limit errors (413, 429)
-        - Key rotation
+        - Rate limit errors
+        - Provider rotation
+        - Automatic fallback
         - Waiting between retries
 
         Returns:
             The API response or None if all retries exhausted
         """
-        import time
+        try:
+            # Extract messages and parameters
+            messages = kwargs.get("messages", [])
+            max_tokens = kwargs.get("max_tokens", self.MAX_TOKENS)
+            temperature = kwargs.get("temperature", 0.7)
+            model = kwargs.get("model", self.MODEL)
 
-        max_retries = 3
-        wait_time = 60  # seconds to wait when rate limited
+            # Use the provider manager to generate text
+            content = self.provider_manager.generate_text(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
 
-        for attempt in range(max_retries):
-            try:
-                return self.client.chat.completions.create(**kwargs)
+            # Return a mock response object for backward compatibility
+            class MockResponse:
+                def __init__(self, content):
+                    self.choices = [MockChoice(content)]
 
-            except Exception as e:
-                error_str = str(e)
+            class MockChoice:
+                def __init__(self, content):
+                    self.message = MockMessage(content)
 
-                # Check for rate limit errors
-                is_rate_limit = (
-                    "rate_limit_exceeded" in error_str
-                    or "413" in error_str
-                    or "429" in error_str
-                    or "tokens per minute" in error_str.lower()
-                )
+            class MockMessage:
+                def __init__(self, content):
+                    self.content = content
 
-                if not is_rate_limit:
-                    # Not a rate limit - re-raise
-                    raise
+            return MockResponse(content)
 
-                # Handle rate limit
-                console.print(f"  [yellow]⚠ Rate limit hit (attempt {attempt + 1}/{max_retries})[/yellow]")
-
-                # Try to rotate to next key
-                if self._rotate_key():
-                    console.print(f"  [cyan]→ Retrying with new key...[/cyan]")
-                    time.sleep(2)  # Brief pause after key rotation
-                    continue
-
-                # No more keys to rotate - wait and retry
-                if attempt < max_retries - 1:
-                    console.print(f"  [yellow]→ Waiting {wait_time}s before retry...[/yellow]")
-                    for i in range(wait_time, 0, -10):
-                        console.print(f"    [dim]{i}s remaining...[/dim]", end="\r")
-                        time.sleep(10)
-                    console.print()  # Clear the countdown line
-                    console.print(f"  [cyan]→ Retrying now...[/cyan]")
-                else:
-                    console.print(f"  [red]✗ All retries exhausted[/red]")
-                    return None
-
-        return None
+        except Exception as e:
+            console.print(f"  [red]✗ All providers failed: {e}[/red]")
+            return None

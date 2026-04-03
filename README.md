@@ -5,7 +5,8 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 ## Features
 
 - **Automatic Endpoint Discovery**: Scans Django projects to find all API endpoints
-- **AI-Powered Deep App Analysis**: Uses Groq API to analyze models, serializers, and views
+- **AI-Powered Deep App Analysis**: Uses AI APIs to analyze models, serializers, and views
+- **Multi-Provider Support**: Groq, Ollama (local), and Together AI with automatic fallback
 - **Intelligent Test Generation**: Generates comprehensive test cases based on code analysis
 - **Per-App Testing**: Generates and runs tests for each Django app independently
 - **Detailed Reporting**: Provides terminal reports with Rich formatting and JSON exports
@@ -32,15 +33,40 @@ pip install -e .
 
 ### Configuration
 
-Create a `.env` file in your project root:
+Create a `.env` file in your project root. DjangoProbe supports multiple AI providers:
 
-```env
-GROQ_API_KEY_1=gsk_your_first_key_here
-GROQ_API_KEY_2=gsk_your_second_key_here  # optional
-GROQ_API_KEY_3=gsk_your_third_key_here   # optional
+**Option 1: Ollama (Completely Free, Local)**
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start Ollama and download a model
+ollama serve &
+ollama pull llama3.2
+
+# No .env configuration needed - Ollama is auto-detected
 ```
 
-Get API keys from: https://console.groq.com/keys
+**Option 2: Groq (Fast Remote API)**
+```env
+GROQ_API_KEY=gsk_your_key_here
+GROQ_MODEL=llama-3.1-8b-instant  # Recommended for better rate limits
+```
+
+**Option 3: Together AI (Good Free Tier)**
+```env
+TOGETHER_API_KEY=your_key_here
+TOGETHER_MODEL=meta-llama/Llama-3.1-8b-chat-Instruct-Turbo
+```
+
+**Multiple Providers (Best Reliability)**
+```env
+GROQ_API_KEY=gsk_your_key_here
+TOGETHER_API_KEY=your_key_here
+# Ollama will be auto-detected if running
+```
+
+For detailed setup instructions, see [MULTI_PROVIDER_SETUP.md](docs/MULTI_PROVIDER_SETUP.md).
 
 ## Usage
 
@@ -143,10 +169,19 @@ DjangoProbe/
 │   ├── project_analyzer.py         # Global project analysis
 │   ├── app_analyzer.py             # Deep app analysis
 │   ├── enhanced_test_generator.py  # AI-powered test generation
-│   ├── ai_helper.py               # AI API communication
+│   ├── ai_helper.py               # AI API communication (multi-provider)
+│   ├── providers/                 # Multi-provider system
+│   │   ├── __init__.py
+│   │   ├── base.py               # Provider interface
+│   │   ├── groq_provider.py      # Groq implementation
+│   │   ├── ollama_provider.py    # Ollama implementation
+│   │   ├── together_provider.py  # Together AI implementation
+│   │   └── manager.py            # Provider manager with fallback
 │   ├── app_test_runner.py         # Test execution
 │   ├── report.py                  # Report generation
 │   └── models.py                 # Data models
+├── docs/
+│   └── MULTI_PROVIDER_SETUP.md   # Multi-provider setup guide
 ├── examples/
 │   └── enhanced_mode_demo.py      # Analysis demo
 ├── IMPLEMENTATION_SUMMARY.md      # Implementation details
@@ -322,18 +357,28 @@ DjangoProbe - Intelligent endpoint testing for Django projects
 - Python 3.8+
 - Django 3.0+
 - Django REST Framework 3.0+
-- Groq API key (free tier available)
+- AI Provider (one or more):
+  - **Ollama** (free, local) - Install from [ollama.ai](https://ollama.ai)
+  - **Groq API key** (free tier) - Get from [console.groq.com](https://console.groq.com)
+  - **Together AI key** (free tier) - Get from [api.together.xyz](https://api.together.xyz)
 
 ## Configuration Options
 
 ### Environment Variables
 
-Required:
-- `GROQ_API_KEY_1`: Your primary Groq API key
+**AI Provider Selection:**
+- `AI_PREFERRED_PROVIDER`: auto (default), groq, ollama, together
 
-Optional:
-- `GROQ_API_KEY_2`: Backup API key for rate limiting
-- `GROQ_API_KEY_3`: Third backup API key
+**Provider Configuration:**
+- `GROQ_API_KEY`: Your Groq API key
+- `GROQ_MODEL`: Groq model (default: llama-3.1-8b-instant)
+- `TOGETHER_API_KEY`: Your Together AI key
+- `TOGETHER_MODEL`: Together model (default: meta-llama/Llama-3.1-8b-chat-Instruct-Turbo)
+- `OLLAMA_MODEL`: Ollama model (default: llama3.2)
+
+**Retry Configuration:**
+- `AI_MAX_RETRIES`: Maximum retry attempts (default: 3)
+- `AI_RETRY_DELAY`: Delay between retries in seconds (default: 60)
 
 ### CLI Options
 
@@ -348,11 +393,14 @@ Options:
 
 ### Common Issues
 
-**Issue**: "No Groq API keys found"
-- **Solution**: Add API keys to `.env` file as shown in Configuration section
+**Issue**: "No AI providers available"
+- **Solution**: Configure at least one provider (Ollama, Groq, or Together AI)
 
 **Issue**: "Rate limit exceeded"
-- **Solution**: Add multiple API keys (`GROQ_API_KEY_2`, `GROQ_API_KEY_3`) for automatic rotation
+- **Solution**: Configure multiple providers for automatic fallback, or use Ollama for unlimited local usage
+
+**Issue**: "Ollama not found"
+- **Solution**: Install Ollama: `curl -fsSL https://ollama.ai/install.sh | sh`
 
 **Issue**: Tests fail to run
 - **Solution**: Ensure project has valid `manage.py` and all dependencies are installed
@@ -361,7 +409,10 @@ Options:
 - **Solution**: Verify login URL is correctly detected and User model fields match
 
 **Issue**: Analysis takes a long time
-- **Solution**: This is expected - DjangoProbe performs deep code analysis for comprehensive test coverage. The time varies based on app complexity.
+- **Solution**: This is expected - DjangoProbe performs deep code analysis for comprehensive test coverage. The time varies based on app complexity and AI provider speed.
+
+**Issue**: AI provider errors (503, 429)
+- **Solution**: The system will automatically rotate to the next available provider. Configure multiple providers for better reliability.
 
 ## Performance
 
@@ -392,6 +443,8 @@ MIT License - see LICENSE file for details
 ## Acknowledgments
 
 - **Groq API**: For providing fast, free AI API access
+- **Ollama**: For completely free local AI model inference
+- **Together AI**: For providing excellent free tier AI services
 - **Django REST Framework**: For the excellent API framework
 - **Rich**: For beautiful terminal output
 - **Typer**: For the elegant CLI framework
