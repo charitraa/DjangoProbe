@@ -452,16 +452,132 @@ class AppTestRunner:
       console.print("  [green]✓ Venv created[/green]")
 
     def _install_dependencies(self) -> None:
+        """Install project dependencies from various sources."""
+        installed = False
+
+        # Try requirements.txt first
         req_file = self.repo_path / "requirements.txt"
-        if not req_file.exists():
-            return
-        console.print("  [dim]Installing dependencies...[/dim]")
-        subprocess.run(
-            [str(self.python), "-m", "pip", "install",
-            "-r", str(req_file), "--quiet",
-            "--disable-pip-version-check"],
-            cwd=str(self.repo_path),
-            capture_output=True,
-            timeout=self.ERROR_TIMEOUT,
-        )
-        console.print("  [green]✓ Dependencies installed[/green]")
+        if req_file.exists():
+            console.print("  [dim]Installing dependencies from requirements.txt...[/dim]")
+            try:
+                subprocess.run(
+                    [str(self.python), "-m", "pip", "install",
+                    "-r", str(req_file), "--quiet",
+                    "--disable-pip-version-check"],
+                    cwd=str(self.repo_path),
+                    capture_output=True,
+                    timeout=self.ERROR_TIMEOUT,
+                    check=True,
+                )
+                console.print("  [green]✓ Dependencies installed from requirements.txt[/green]")
+                installed = True
+            except subprocess.CalledProcessError as e:
+                console.print(f"  [yellow]⚠ Failed to install requirements.txt: {e}[/yellow]")
+
+        # Try requirements/ directory structure
+        if not installed:
+            req_dir = self.repo_path / "requirements"
+            if req_dir.exists() and req_dir.is_dir():
+                console.print("  [dim]Installing dependencies from requirements/ directory...[/dim]")
+                for req_file in sorted(req_dir.glob("*.txt")):
+                    console.print(f"  [dim]  - Installing {req_file.name}...[/dim]")
+                    try:
+                        subprocess.run(
+                            [str(self.python), "-m", "pip", "install",
+                            "-r", str(req_file), "--quiet",
+                            "--disable-pip-version-check"],
+                            cwd=str(self.repo_path),
+                            capture_output=True,
+                            timeout=self.ERROR_TIMEOUT,
+                            check=True,
+                        )
+                        installed = True
+                    except subprocess.CalledProcessError as e:
+                        console.print(f"  [yellow]⚠ Failed to install {req_file.name}: {e}[/yellow]")
+                if installed:
+                    console.print("  [green]✓ Dependencies installed from requirements/[/green]")
+
+        # Try Pipfile (pipenv)
+        if not installed:
+            pipfile = self.repo_path / "Pipfile"
+            if pipfile.exists():
+                console.print("  [dim]Installing dependencies from Pipfile...[/dim]")
+                try:
+                    subprocess.run(
+                        [str(self.python), "-m", "pip", "install", "pipenv", "--quiet"],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        timeout=self.ERROR_TIMEOUT,
+                        check=True,
+                    )
+                    subprocess.run(
+                        [str(self.python), "-m", "pipenv", "install", "--dev", "--system"],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        timeout=self.ERROR_TIMEOUT,
+                        check=True,
+                    )
+                    console.print("  [green]✓ Dependencies installed from Pipfile[/green]")
+                    installed = True
+                except subprocess.CalledProcessError as e:
+                    console.print(f"  [yellow]⚠ Failed to install from Pipfile: {e}[/yellow]")
+
+        # Try pyproject.toml (poetry)
+        if not installed:
+            pyproject = self.repo_path / "pyproject.toml"
+            if pyproject.exists():
+                console.print("  [dim]Installing dependencies from pyproject.toml...[/dim]")
+                try:
+                    subprocess.run(
+                        [str(self.python), "-m", "pip", "install", "poetry", "--quiet"],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        timeout=self.ERROR_TIMEOUT,
+                        check=True,
+                    )
+                    subprocess.run(
+                        [str(self.python), "-m", "poetry", "install", "--no-interaction"],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        timeout=self.ERROR_TIMEOUT,
+                        check=True,
+                    )
+                    console.print("  [green]✓ Dependencies installed from pyproject.toml[/green]")
+                    installed = True
+                except subprocess.CalledProcessError as e:
+                    console.print(f"  [yellow]⚠ Failed to install from pyproject.toml: {e}[/yellow]")
+
+        # Try setup.py (editable install)
+        if not installed:
+            setup_py = self.repo_path / "setup.py"
+            if setup_py.exists():
+                console.print("  [dim]Installing dependencies from setup.py...[/dim]")
+                try:
+                    subprocess.run(
+                        [str(self.python), "-m", "pip", "install", "-e", ".", "--quiet"],
+                        cwd=str(self.repo_path),
+                        capture_output=True,
+                        timeout=self.ERROR_TIMEOUT,
+                        check=True,
+                    )
+                    console.print("  [green]✓ Dependencies installed from setup.py[/green]")
+                    installed = True
+                except subprocess.CalledProcessError as e:
+                    console.print(f"  [yellow]⚠ Failed to install from setup.py: {e}[/yellow]")
+
+        # Install common Django dependencies that might be missing
+        console.print("  [dim]Ensuring common Django dependencies...[/dim]")
+        common_deps = ["python-decouple", "django", "djangorestframework", "pytest", "pytest-django"]
+        for dep in common_deps:
+            try:
+                subprocess.run(
+                    [str(self.python), "-m", "pip", "install", dep, "--quiet",
+                     "--disable-pip-version-check"],
+                    cwd=str(self.repo_path),
+                    capture_output=True,
+                    timeout=60,
+                )
+            except subprocess.CalledProcessError:
+                pass  # Ignore if already installed or fails
+
+        console.print("  [green]✓ Dependency installation complete[/green]")

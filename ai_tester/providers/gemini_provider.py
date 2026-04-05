@@ -1,6 +1,6 @@
 """
-Together AI provider implementation.
-Good free tier with reliable API.
+Google Gemini AI provider implementation.
+Supports Gemini models via OpenAI-compatible API.
 """
 import os
 from typing import List, Optional
@@ -10,83 +10,79 @@ from rich.console import Console
 from .base import BaseProvider
 
 
-class TogetherProvider(BaseProvider):
+class GeminiProvider(BaseProvider):
     """
-    Together AI provider using OpenAI-compatible API.
-
-    Free tier:
-    - ~10,000-50,000 tokens/month (varies)
-    - Good rate limits
-    - Multiple quality models
+    Google Gemini provider using OpenAI-compatible API.
 
     Models:
-    - meta-llama/Llama-3.2-90b-chat-preview: Latest Llama, excellent quality
-    - meta-llama/Llama-3.1-70b-chat: High quality, stable
-    - mistralai/Mistral-7B-Instruct-v0.3: Fast, good performance
-    - Qwen/Qwen2.5-72B-Instruct: Great for code generation
+    - gemini-2.0-flash-exp: Latest, very fast
+    - gemini-1.5-pro: High quality, good performance
+    - gemini-1.5-flash: Fast, good quality
+    - gemini-1.5-flash-8b: Lightweight, very fast
+
+    Requires GEMINI_API_KEY environment variable.
     """
 
-    DEFAULT_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
-    BASE_URL = "https://api.together.xyz/v1"
+    DEFAULT_MODEL = "gemini-2.0-flash-exp"
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
     # Available models with characteristics
     MODELS = {
-        "meta-llama/Llama-3.2-90b-chat-preview": {
+        "gemini-2.0-flash-exp": {
             "quality": "excellent",
-            "speed": "medium",
-            "rate_limit": "medium",
-            "description": "Latest Llama 3.2 90B, best quality"
-        },
-        "meta-llama/Llama-3.1-70b-chat": {
-            "quality": "excellent",
-            "speed": "medium",
-            "rate_limit": "good",
-            "description": "Llama 3.1 70B, very stable"
-        },
-        "meta-llama/Llama-3.1-8b-chat-Instruct-Turbo": {
-            "quality": "good",
             "speed": "very_fast",
-            "rate_limit": "high",
-            "description": "Fast, high rate limits, recommended"
+            "rate_limit": "good",
+            "description": "Latest Gemini 2.0, very fast"
         },
-        "mistralai/Mistral-7B-Instruct-v0.3": {
+        "gemini-1.5-pro": {
+            "quality": "excellent",
+            "speed": "fast",
+            "rate_limit": "good",
+            "description": "High quality, stable"
+        },
+        "gemini-1.5-flash": {
             "quality": "good",
             "speed": "fast",
             "rate_limit": "high",
-            "description": "Mistral 7B, good performance"
+            "description": "Fast, good quality"
         },
-        "Qwen/Qwen2.5-72B-Instruct": {
-            "quality": "excellent",
-            "speed": "medium",
-            "rate_limit": "good",
-            "description": "Great for code generation"
+        "gemini-1.5-flash-8b": {
+            "quality": "good",
+            "speed": "very_fast",
+            "rate_limit": "high",
+            "description": "Lightweight, very fast"
         }
     }
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, **kwargs):
         super().__init__(api_key=api_key, model=model, **kwargs)
 
-        self.api_key = api_key or os.environ.get("TOGETHER_API_KEY")
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError(
-                "No Together API key found. Set TOGETHER_API_KEY environment variable.\n"
-                "Get your free key at: https://api.together.xyz/"
+                "No Gemini API key found. Set GEMINI_API_KEY environment variable.\n"
+                "Get your key at: https://makersuite.google.com/app/apikey"
             )
 
         self.model = model or self.DEFAULT_MODEL
         self.console = Console()
 
         try:
+            # Use OpenAI-compatible API for Gemini
+            # Model name needs to be prefixed for OpenAI API
+            model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
+
             self.client = OpenAI(
                 api_key=self.api_key,
-                base_url=self.BASE_URL,
+                base_url=self.BASE_URL + "/openai/",
             )
+            self.model_for_api = model_name
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Together client: {e}")
+            raise RuntimeError(f"Failed to initialize Gemini client: {e}")
 
     def generate_text(self, messages: List[dict], **kwargs) -> str:
         """
-        Generate text using Together AI API.
+        Generate text using Gemini API.
 
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -96,7 +92,7 @@ class TogetherProvider(BaseProvider):
             Generated text content
         """
         default_params = {
-            "model": self.model,
+            "model": self.model_for_api,
             "max_tokens": kwargs.get("max_tokens", 8096),
             "temperature": kwargs.get("temperature", 0.7),
         }
@@ -116,15 +112,15 @@ class TogetherProvider(BaseProvider):
             error_str = str(e)
             # Check for rate limit or quota errors
             if any(keyword in error_str.lower() for keyword in [
-                "rate_limit", "quota", "429", "billing"
+                "rate_limit", "quota", "429", "billing", "resource_exhausted"
             ]):
-                raise RateLimitError(f"Together rate/quota limit: {error_str}")
-            raise RuntimeError(f"Together API error: {error_str}")
+                raise RateLimitError(f"Gemini rate/quota limit: {error_str}")
+            raise RuntimeError(f"Gemini API error: {error_str}")
 
     def get_model_info(self) -> dict:
-        """Get information about Together models."""
+        """Get information about Gemini models."""
         return {
-            "provider": "Together AI",
+            "provider": "Gemini",
             "current_model": self.model,
             "available_models": self.MODELS,
             "base_url": self.BASE_URL,
@@ -133,22 +129,22 @@ class TogetherProvider(BaseProvider):
         }
 
     def is_available(self) -> bool:
-        """Check if Together is configured and accessible."""
+        """Check if Gemini is configured and accessible."""
         try:
             # Check if API key is present and client is initialized
             if not self.api_key or not hasattr(self, 'client'):
                 return False
             # Basic configuration check - don't make live API call
             # Actual errors will be caught when generating text
-            return bool(self.api_key and self.api_key.startswith('tgp_'))
+            return bool(self.api_key and self.api_key.startswith('AIza'))
         except Exception:
             return False
 
     def supports_streaming(self) -> bool:
-        """Together supports streaming."""
+        """Gemini supports streaming."""
         return True
 
 
 class RateLimitError(Exception):
-    """Raised when Together rate/quota limit is hit."""
+    """Raised when Gemini rate/quota limit is hit."""
     pass

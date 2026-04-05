@@ -10,6 +10,8 @@ from .base import BaseProvider
 from .groq_provider import GroqProvider, RateLimitError as GroqRateLimitError
 from .ollama_provider import OllamaProvider
 from .together_provider import TogetherProvider, RateLimitError as TogetherRateLimitError
+from .anthropic_provider import AnthropicProvider, RateLimitError as AnthropicRateLimitError
+from .gemini_provider import GeminiProvider, RateLimitError as GeminiRateLimitError
 
 
 class ProviderManager:
@@ -61,7 +63,10 @@ class ProviderManager:
             "preferred_provider": os.environ.get("AI_PREFERRED_PROVIDER", "auto"),
             "groq_model": os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant"),
             "ollama_model": os.environ.get("OLLAMA_MODEL", "llama3.2"),
-            "together_model": os.environ.get("TOGETHER_MODEL", "meta-llama/Llama-3.1-8b-chat-Instruct-Turbo"),
+            "together_model": os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
+            "anthropic_model": os.environ.get("ANTHROPIC_MODEL", "claude-3.5-sonnet"),
+            "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+            "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL", ""),
             "max_retries": int(os.environ.get("AI_MAX_RETRIES", "3")),
             "retry_delay": int(os.environ.get("AI_RETRY_DELAY", "60")),
         }
@@ -75,20 +80,24 @@ class ProviderManager:
 
         # Provider configurations
         provider_configs = [
+            ("anthropic", AnthropicProvider, {"model": self.config["anthropic_model"], "base_url": self.config.get("anthropic_base_url")}),
             ("groq", GroqProvider, {"model": self.config["groq_model"]}),
-            ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
+            ("gemini", GeminiProvider, {"model": self.config["gemini_model"]}),
             ("together", TogetherProvider, {"model": self.config["together_model"]}),
+            ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
         ]
 
         # If auto, try to use preferred order based on reliability
         if preferred == "auto":
-            # Try Ollama first (free, local), then Groq, then Together
+            # Try Groq first, then Anthropic, Gemini, Together, then Ollama (local, last fallback)
             provider_configs = [
-                ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
+                ("anthropic", AnthropicProvider, {"model": self.config["anthropic_model"], "base_url": self.config.get("anthropic_base_url")}),
                 ("groq", GroqProvider, {"model": self.config["groq_model"]}),
+                ("gemini", GeminiProvider, {"model": self.config["gemini_model"]}),
                 ("together", TogetherProvider, {"model": self.config["together_model"]}),
+                ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
             ]
-        elif preferred in ["groq", "ollama", "together"]:
+        elif preferred in ["groq", "anthropic", "gemini", "together", "ollama"]:
             # Move preferred provider to front
             preferred_config = next((c for c in provider_configs if c[0] == preferred), None)
             if preferred_config:
@@ -160,7 +169,7 @@ class ProviderManager:
                 self.console.print(f"[green]✓ {provider_name} succeeded[/green]")
                 return response
 
-            except (GroqRateLimitError, TogetherRateLimitError) as e:
+            except (GroqRateLimitError, TogetherRateLimitError, AnthropicRateLimitError, GeminiRateLimitError) as e:
                 # Handle rate limits
                 self.console.print(f"[yellow]⚠ {provider_name} rate limit hit[/yellow]")
                 self._handle_rate_limit(self.current_provider_index)
