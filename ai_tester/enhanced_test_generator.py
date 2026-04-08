@@ -155,13 +155,28 @@ class EnhancedTestGenerator:
 
         content = self._clean_code(content)
 
-        # Step 2.5: Validate generated code
+        # Step 2.5: Validate generated code with retry mechanism
         validated, content = self._validate_generated_code(content, app_name)
         if not validated:
             console.print(
                 f"  [red]✗ Generated code validation failed for {app_name}[/red]"
             )
-            return None
+            # Retry once with a simpler prompt
+            console.print(f"  [yellow]→ Retrying with simpler prompt...[/yellow]")
+            content = self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
+            if content:
+                content = self._clean_code(content)
+                validated, content = self._validate_generated_code(content, app_name)
+                if not validated:
+                    console.print(
+                        f"  [red]✗ Retry also failed for {app_name}[/red]"
+                    )
+                    return None
+            else:
+                console.print(
+                    f"  [red]✗ Retry generation failed for {app_name}[/red]"
+                )
+                return None
 
         # Step 3: Write to file
         written = self._write_test_file(app_name, content, file_path)
@@ -870,8 +885,38 @@ REQUIREMENTS:
 - Handle JWT authentication: self.client.cookies['access_token'] = token
 - Convert UUIDs to strings in URLs
 - Write working, executable Python code
+- CRITICAL: Ensure all parentheses, brackets, and braces are matched
+- CRITICAL: Use consistent indentation (4 spaces per level)
 
 END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
+
+        # Build system prompt for retry
+        retry_system_prompt = """You are a Python code generator. Output ONLY valid Python code.
+CRITICAL RULES:
+1. Complete all methods with proper closing parentheses
+2. Use consistent indentation (4 spaces per level)
+3. Never leave unmatched parentheses, brackets, or braces
+4. Return ONLY Python code, no markdown, no explanation
+"""
+
+        # Call AI with retry prompt
+        console.print(f"    [dim]Calling AI model with retry prompt...[/dim]")
+        response = self.ai_helper.call_with_retry(
+            model=self.ai_helper.MODEL,
+            max_tokens=self.MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": retry_system_prompt},
+                {"role": "user", "content": simpler_prompt},
+            ],
+        )
+
+        if response and response.choices and response.choices[0].message.content:
+            content = response.choices[0].message.content
+            console.print(f"    [green]✓ Retry generated {len(content)} chars of test code[/green]")
+            return content
+        else:
+            console.print(f"    [red]✗ Retry AI generation failed[/red]")
+            return None
 
     def _fix_syntax_error(self, content: str, error: SyntaxError) -> str:
         """
@@ -888,9 +933,12 @@ END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
         line_num = error.lineno if hasattr(error, 'lineno') else 0
 
         # Fix specific patterns based on error message
-        if "unmatched ')'" in str(error).lower():
+        if "unmatched ')'" in str(error).lower() or "unmatched '('" in str(error).lower():
             # Find and fix unmatched parentheses
             lines[line_num - 1] = self._fix_line_parens(lines[line_num - 1])
+        elif "unexpected indent" in str(error).lower():
+            # Fix indentation issues
+            lines = self._fix_indentation(lines, line_num)
         elif "invalid syntax" in str(error).lower():
             # Try to fix various syntax issues
             lines[line_num - 1] = self._fix_invalid_syntax(lines[line_num - 1])
@@ -902,11 +950,25 @@ END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
         # Fix 1: Missing closing parenthesis before quote in f-string
         if 'f\'' in line or 'f"' in line:
             # Pattern: f'/path/{str(id)}' -> f'/path/{str(id)})'
-            line = re.sub(r"f['\"]([^{\'\"]}*{str\([^)]+\)(?!\))", lambda m: m.group(0) + ")" if m.group(0).count('(') > m.group(0).count(')') else m.group(0), line)
+            # Check for unclosed str() calls in f-strings
+            line = re.sub(r"f['\"]([^{\'\"]]*{str\([^)]+\)(?!\))", lambda m: m.group(0) + ")" if m.group(0).count('(') > m.group(0).count(')') else m.group(0), line)
 
         # Fix 2: Missing closing parenthesis before quote
+        # Pattern: method('arg' -> method('arg')
         line = re.sub(r"(\w+)\('([^']*)'(?!\))", r"\1('\2')", line)
         line = re.sub(r'(\w+)\("([^"]*)"(?!\))', r'\1("\2")', line)
+
+        # Fix 3: Add missing closing parentheses at end of line
+        open_count = line.count('(')
+        close_count = line.count(')')
+        if open_count > close_count:
+            # Add missing closing parentheses
+            line += ')' * (open_count - close_count)
+
+        # Fix 4: Fix str() calls that are missing closing parenthesis
+        # Pattern: str(something' -> str(something)'
+        line = re.sub(r'str\(([^)]*)\'$', r'str(\1)\'', line)
+        line = re.sub(r'str\(([^)]*)"$', r'str(\1)"', line)
 
         return line
 
@@ -922,6 +984,132 @@ END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
             line = re.sub(r'(\{\s*\w+\s*)([^:,\s\}])', r'\1: \2', line)
 
         return line
+
+    def _fix_indentation(self, lines: list[str], error_line: int) -> list[str]:
+        """
+        Fix indentation issues in generated code.
+
+        Args:
+            lines: List of code lines
+            error_line: Line number where error occurred (1-indexed)
+
+        Returns:
+            Fixed list of lines
+        """
+        if error_line < 1 or error_line > len(lines):
+            return lines
+
+        # Determine expected indentation level
+        # Look at the previous line to understand the context
+        prev_line = lines[error_line - 2] if error_line > 1 else ""
+        current_line = lines[error_line - 1]
+
+        # Case 1: Previous line ends with colon, so we expect increased indentation
+        if prev_line.rstrip().endswith(':'):
+            # Calculate the expected indent (4 spaces or 1 tab per level)
+            prev_indent = len(prev_line) - len(prev_line.lstrip())
+            expected_indent = prev_indent + 4  # Add 4 spaces for next level
+            current_indent = len(current_line) - len(current_line.lstrip())
+
+            # If current line has less indentation than expected, fix it
+            if current_indent < expected_indent:
+                # Add the missing indentation
+                lines[error_line - 1] = ' ' * (expected_indent - current_indent) + current_line
+
+        # Case 2: Line is at same level as class/method definition but shouldn't be
+        elif re.match(r'^\s*(class|def)\s+', prev_line):
+            # This line should be indented (it's inside the class/method)
+            prev_indent = len(prev_line) - len(prev_line.lstrip())
+            current_indent = len(current_line) - len(current_line.lstrip())
+
+            if current_indent <= prev_indent:
+                # This line should be indented more
+                lines[error_line - 1] = '    ' + current_line  # Add 4 spaces
+
+        # Case 3: Fix mixed tabs and spaces
+        if '\t' in current_line:
+            # Convert tabs to spaces (4 spaces per tab)
+            lines[error_line - 1] = current_line.replace('\t', '    ')
+
+        return lines
+
+    def _normalize_indentation(self, content: str) -> str:
+        """
+        Normalize indentation in generated code.
+
+        Args:
+            content: The code to normalize
+
+        Returns:
+            Code with normalized indentation
+        """
+        lines = content.split('\n')
+        normalized_lines = []
+
+        # Track the expected indentation level
+        indent_stack = [0]  # Stack of expected indentation levels (in spaces)
+
+        for line in lines:
+            stripped = line.lstrip()
+            if not stripped:
+                # Keep empty lines as-is
+                normalized_lines.append(line)
+                continue
+
+            # Calculate current indentation
+            current_indent = len(line) - len(stripped)
+            leading_whitespace = line[:current_indent]
+
+            # Check for mixed tabs and spaces
+            if '\t' in leading_whitespace and ' ' in leading_whitespace:
+                # Convert tabs to spaces (4 spaces per tab)
+                leading_whitespace = leading_whitespace.replace('\t', '    ')
+                line = leading_whitespace + stripped
+
+            # Check if line starts a new block (ends with colon)
+            if stripped.rstrip().endswith(':'):
+                # This line defines a new block
+                # Ensure its indentation matches the current level
+                expected_indent = indent_stack[-1]
+                if current_indent != expected_indent:
+                    # Fix the indentation
+                    line = ' ' * expected_indent + stripped
+                    normalized_lines.append(line)
+                else:
+                    normalized_lines.append(line)
+
+                # Push new indent level for next lines
+                indent_stack.append(expected_indent + 4)
+            elif stripped.startswith(('return ', 'raise ', 'yield ', 'break ', 'continue ')) or \
+                 stripped.startswith(('assert ', 'pass ')):
+                # These statements should be at the same level as the block
+                if len(indent_stack) > 1:
+                    expected_indent = indent_stack[-2]  # Use parent level
+                    if current_indent < expected_indent:
+                        # This line is dedented, pop the stack
+                        indent_stack.pop()
+                        expected_indent = indent_stack[-1]
+
+                    if current_indent != expected_indent:
+                        line = ' ' * expected_indent + stripped
+                normalized_lines.append(line)
+            else:
+                # Regular line - ensure indentation is at least at current level
+                expected_indent = indent_stack[-1]
+                if current_indent < expected_indent and not stripped.startswith('#'):
+                    # Line is less indented than expected, might be dedent
+                    # Try to find matching level in stack
+                    while len(indent_stack) > 1 and current_indent < indent_stack[-1]:
+                        indent_stack.pop()
+                    expected_indent = indent_stack[-1]
+
+                if current_indent < expected_indent and not stripped.startswith('#'):
+                    # Fix under-indented line
+                    line = ' ' * expected_indent + stripped
+
+                normalized_lines.append(line)
+
+        return '\n'.join(normalized_lines)
 
     def _clean_code(self, content: str) -> str:
         """
@@ -1121,6 +1309,9 @@ END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
             close_braces = content.count('}')
             if open_braces > close_braces:
                 content += '}' * (open_braces - close_braces)
+
+            # Fix 6: Normalize indentation (convert tabs to spaces, fix inconsistent indentation)
+            content = self._normalize_indentation(content)
 
         return content
 

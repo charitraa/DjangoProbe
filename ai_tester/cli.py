@@ -181,7 +181,7 @@ def analyze(
             continue
 
         # Step 3 — Check results
-        errors = [r for r in results if r.status in ("ERROR", "FAILED")]
+        errors = [r for r in results if r.status in ("ERROR", "FAIL")]
 
         if not errors:
             console.print(
