@@ -156,7 +156,8 @@ class EnhancedTestGenerator:
         content = self._clean_code(content)
 
         # Step 2.5: Validate generated code
-        if not self._validate_generated_code(content, app_name):
+        validated, content = self._validate_generated_code(content, app_name)
+        if not validated:
             console.print(
                 f"  [red]✗ Generated code validation failed for {app_name}[/red]"
             )
@@ -189,7 +190,7 @@ class EnhancedTestGenerator:
         4. NEVER use relative imports (from .models import ...) — use absolute imports only
         5. NEVER use force_authenticate() — it doesn't exist on Django Client
         6. NEVER use client.login() if the project uses JWT authentication
-        7. Import User model from the correct path, not django.contrib.auth.models
+        7. Import User model using get_user_model() OR from apps.{app_name}.models import User NEVER use: from apps.{app_name} import User
 
         Your task:
         1. Read the detailed analysis prompt provided
@@ -203,15 +204,20 @@ class EnhancedTestGenerator:
         - If the project uses JWT (most DRF projects do):
           - DO NOT use client.login() - it won't work with JWT
           - Create a helper method that authenticates and stores the token
-          - Use Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
+          - Check authentication method: Bearer token OR Cookie-based
+          - For Bearer token: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
+          - For Cookie-based: self.client.cookies['access_token'] = token
           - Example helper method structure:
             ```python
             def authenticate_jwt(self, email, password):
                 payload = {'email': email, 'password': password}
                 response = self.client.post('/api/user/login/', json.dumps(payload), content_type='application/json')
                 if response.status_code == 200:
-                    token = response.json()['access']
+                    token = response.json().get('access', response.json().get('token'))
+                    # Try both header and cookie methods
                     self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
+                    self.client.cookies['access_token'] = token
+                    return response.json()
             ```
         - If the project uses Django session auth (less common):
           - Use client.login() method
@@ -264,7 +270,7 @@ class EnhancedTestGenerator:
                         token_path = auth_struct.get('token_path', 'access')
                         login_url = auth_struct.get('login_url', '/api/user/login/')
                         user_prompt += f"""
-        - THIS PROJECT USES JWT AUTHENTICATION
+        - THIS PROJECT USES JWT AUTHENTICATION (POSSIBLY COOKIE-BASED)
         - DO NOT use client.login() - it will NOT work
         - You MUST create an authentication helper method
         - CRITICAL: The actual login response structure has been ANALYZED
@@ -273,7 +279,9 @@ class EnhancedTestGenerator:
         - Helper method should:
           1. Make a POST request to the login endpoint with credentials
           2. Extract the token from the response using the DETECTED path
-          3. Set the Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer token'
+          3. Set BOTH authentication methods to be safe:
+             - Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
+             - Cookie: self.client.cookies['access_token'] = {{token}}
         - Example authentication helper (uses DETECTED token path):
           ```python
           def authenticate_jwt(self, email, password):
@@ -281,12 +289,15 @@ class EnhancedTestGenerator:
               response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
               if response.status_code == 200:
                   token = response.json()['{token_path}']  # Use detected path
+                  # Set both header and cookie for maximum compatibility
                   self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
+                  self.client.cookies['access_token'] = {{token}}
                   return response.json()
               return None
           ```
         - Call this helper in setUp() or test methods before authenticated requests
         - IMPORTANT: Use the exact token path '{token_path}', do NOT assume 'access'
+        - IMPORTANT: Set both HTTP_AUTHORIZATION header AND cookie to ensure compatibility
 """
                     else:
                         user_prompt += f"""
@@ -342,7 +353,10 @@ class EnhancedTestGenerator:
         - User model is located at: {self.analysis.auth_module or 'apps.user.models' if self.analysis else 'apps.user.models'}
         - User model uses email as the identifier field (not username)
         - Create users using: User.objects.create_user(email='test@example.com', password='password123', full_name='Test User')
-        - When importing, use: from {self.analysis.auth_module or 'apps.user.models'} import User
+        - When importing, use one of these methods:
+          1. Preferred: from django.contrib.auth import get_user_model; User = get_user_model()
+          2. Alternative: from apps.user.models import User
+        - NEVER use: from apps.user import User
 
         ## CRITICAL UUID FIELD INFORMATION:
         - The project likely uses UUID primary keys for models
@@ -351,6 +365,21 @@ class EnhancedTestGenerator:
         - Example: 'pages': [str(page.id) for page in pages_list] instead of 'pages': [page.id for page in pages_list]
         - This is REQUIRED because UUID objects cannot be directly JSON serialized
         - Apply this conversion in setUp() method and test methods
+
+        ## CRITICAL IMAGE FILE CREATION (if app uses images):
+        - When creating test image files using PIL/Pillow, use correct format names
+        - For JPG files: image.save(file, 'JPEG') NOT 'jpg' or 'JPG'
+        - For PNG files: image.save(file, 'PNG') NOT 'png'
+        - Pillow requires uppercase format names, not lowercase
+        - Example helper method:
+          ```python
+          def _create_image_file(self, name='test.jpg'):
+              file = BytesIO()
+              image = Image.new('RGB', (100, 100), 'red')
+              image.save(file, 'JPEG')  # Use 'JPEG', 'PNG', etc. - uppercase
+              file.seek(0)
+              return SimpleUploadedFile(name, file.getvalue(), content_type='image/jpeg')
+          ```
 """
 
         # Add import path guidance for each app
@@ -506,6 +535,12 @@ class EnhancedTestGenerator:
         if response:
             content = response.choices[0].message.content
             if content:
+                # Check if AI returned instructions instead of code
+                if self._is_instructions_not_code(content):
+                    console.print(f"    [yellow]⚠ AI returned instructions instead of code, retrying...[/yellow]")
+                    # Try to generate again with simpler prompt
+                    return self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
+
                 console.print(
                     f"    [green]✓ Generated {len(content)} chars of test code[/green]"
                 )
@@ -605,12 +640,12 @@ class EnhancedTestGenerator:
             groups.setdefault(ep.app_name, []).append(ep)
         return groups
 
-    def _validate_generated_code(self, content: str, app_name: str) -> bool:
+    def _validate_generated_code(self, content: str, app_name: str) -> tuple[bool, str]:
         """
         Validate that the generated code is complete and syntactically correct.
 
         Returns:
-            True if code is valid, False otherwise
+            Tuple of (is_valid, cleaned_content)
         """
         console.print(f"    [dim]→ Validating generated code...[/dim]")
 
@@ -619,7 +654,40 @@ class EnhancedTestGenerator:
             compile(content, f'<test_{app_name}>', 'exec')
         except SyntaxError as e:
             console.print(f"    [red]✗ Syntax error in generated code: {e}[/red]")
-            return False
+            # Try to provide more specific error location
+            if hasattr(e, 'lineno'):
+                console.print(f"    [red]  Error at line {e.lineno}: {e.msg}[/red]")
+
+            # Attempt to fix the syntax error automatically
+            console.print(f"    [yellow]→ Attempting to fix syntax error...[/yellow]")
+            fixed_content = self._fix_syntax_error(content, e)
+
+            # Try compiling the fixed code
+            try:
+                compile(fixed_content, f'<test_{app_name}>', 'exec')
+                console.print(f"    [green]✓ Syntax error fixed successfully[/green]")
+                return True, fixed_content
+            except SyntaxError as e2:
+                console.print(f"    [red]✗ Could not fix syntax error: {e2}[/red]")
+                return False, content
+
+        # Check for specific syntax patterns that cause issues
+        # Pattern 1: Missing colons in dictionary definitions
+        if re.search(r'\{[^}]*\w[^:,\s\}]', content):
+            console.print(f"    [yellow]⚠ Possible missing colon in dictionary definition[/yellow]")
+
+        # Pattern 2: Unmatched brackets/parentheses
+        if content.count('{') != content.count('}'):
+            console.print(f"    [yellow]⚠ Unmatched curly braces in code[/yellow]")
+        if content.count('[') != content.count(']'):
+            console.print(f"    [yellow]⚠ Unmatched square brackets in code[/yellow]")
+        if content.count('(') != content.count(')'):
+            console.print(f"    [yellow]⚠ Unmatched parentheses in code[/yellow]")
+
+        # Pattern 3: Malformed function definitions
+        malformed_def = re.findall(r'def\s+\w+\([^)]*\s*\n\s*[^\s:]', content)
+        if malformed_def:
+            console.print(f"    [yellow]⚠ Malformed function definitions found - missing colons[/yellow]")
 
         # Check for required imports
         required_imports = ['from django.test import', 'import json']
@@ -630,12 +698,12 @@ class EnhancedTestGenerator:
         # Check for TestCase class
         if 'class' not in content or 'TestCase' not in content:
             console.print(f"    [yellow]⚠ No TestCase class found[/yellow]")
-            return False
+            return False, content
 
         # Check for test methods
         if 'def test_' not in content:
             console.print(f"    [yellow]⚠ No test methods found[/yellow]")
-            return False
+            return False, content
 
         # Check for strict assertions that might fail due to User model behavior differences
         # Some User models set is_staff/is_superuser automatically based on role
@@ -647,12 +715,12 @@ class EnhancedTestGenerator:
         # Check for relative imports (bad)
         if 'from .models import' in content or 'from .serializers import' in content:
             console.print(f"    [red]✗ Found relative imports - use absolute imports instead[/red]")
-            return False
+            return False, content
 
         # Check for wrong User import
         if 'from django.contrib.auth.models import User' in content:
             console.print(f"    [red]✗ Found django.contrib.auth.models.User - use custom User model[/red]")
-            return False
+            return False, content
 
         # REMOVED: Check for incorrect self.str() calls
         # The cleaning function handles this automatically with regex substitutions
@@ -663,7 +731,7 @@ class EnhancedTestGenerator:
         # Check for force_authenticate (bad)
         if 'force_authenticate' in content:
             console.print(f"    [red]✗ Found force_authenticate - use proper authentication method[/red]")
-            return False
+            return False, content
 
         # Check for JWT authentication if the project uses JWT
         if self.analysis and self.analysis.auth_type == "JWT":
@@ -672,6 +740,9 @@ class EnhancedTestGenerator:
             # Check for JWT token handling
             if 'HTTP_AUTHORIZATION' not in content and 'Bearer' not in content:
                 console.print(f"    [yellow]⚠ JWT project missing Authorization header handling[/yellow]")
+            # Check for cookie-based JWT support (important for cookie_jwt auth type)
+            if 'cookies' not in content and 'access_token' not in content:
+                console.print(f"    [yellow]⚠ JWT project missing cookie authentication support - recommended for cookie_jwt[/yellow]")
         else:
             # Check for session authentication if not JWT
             if 'HTTP_AUTHORIZATION' not in content and 'Bearer' not in content:
@@ -694,7 +765,163 @@ class EnhancedTestGenerator:
             console.print(f"    [yellow]⚠ Code may be missing essential test structure[/yellow]")
 
         console.print(f"    [green]✓ Code validation passed[/green]")
-        return True
+        return True, content
+
+    def _is_instructions_not_code(self, content: str) -> bool:
+        """
+        Detect if AI returned instructions instead of actual Python code.
+
+        Returns:
+            True if content appears to be instructions, False otherwise
+        """
+        # Check for patterns that indicate instructions rather than code
+        instruction_markers = [
+            "Generate only valid Python code",
+            "Generate full Python code",
+            "Provide full Python code",
+            "Write complete code",
+            "**Generate**",
+            "Generate the code",
+            "**Provide**",
+            "**Helper Methods**",
+            "**Test Requirements**",
+            "**5. Test Requirements**",
+            "**6. Test Data**",
+            "**7. Test Structure**",
+            "**End of Instructions**",
+            "**Generate the Code**",
+            "**7. Output Format**",
+            "Begin the response with the code block immediately",
+            "Do not include markdown explanations outside the code block",
+        ]
+
+        # Check for instruction-like patterns
+        has_instruction_markers = any(marker.lower() in content.lower() for marker in instruction_markers)
+
+        # Check for actual Python code patterns (be more specific)
+        has_python_code = (
+            'import ' in content and (
+                'django.test import' in content or
+                'from django' in content or
+                'from rest_framework' in content
+            )
+        ) or (
+            'def test_' in content  # Look specifically for test methods
+        ) or (
+            'class ' in content and ('Test' in content or 'TestCase' in content)
+        )
+
+        # Check if content ends with instructions instead of code
+        lines = content.strip().split('\n')
+        last_lines = lines[-10:] if len(lines) >= 10 else lines
+        ends_with_instructions = any(marker.lower() in ' '.join(last_lines).lower() for marker in [
+            'helper', 'requirements', 'structure', 'data', 'end of',
+            'begin the response', 'code block', 'markdown explanations'
+        ])
+
+        # Check if content is too long for instructions but has no code (highly suspicious)
+        is_long_without_code = len(content) > 10000 and not has_python_code
+
+        # If has instruction markers, ends with instructions, is long without code, and no real Python code, it's instructions
+        return (has_instruction_markers or ends_with_instructions or is_long_without_code) and not has_python_code
+
+    def _retry_with_simpler_prompt(
+        self,
+        app_name: str,
+        app_endpoints: list[EndpointInfo],
+        ai_prompt: str,
+        structured_analysis: dict
+    ) -> str | None:
+        """
+        Retry AI generation with a simpler prompt focused on getting code.
+
+        Returns:
+            Generated test code or None
+        """
+        # Build a much more direct prompt that demands code only
+        simpler_prompt = f"""You are a Python code generator. Generate Django test code ONLY.
+
+Application: {app_name}
+
+Do not write explanations, instructions, or guidance. Do not use markdown formatting.
+
+Start your response immediately with:
+```python
+from django.test import TestCase
+```
+
+Generate a complete Django test file with:
+1. Import statements (from django.test import, import json, etc.)
+2. Test classes that inherit from TestCase
+3. Test methods (def test_*) with proper assertions
+4. setUp and tearDown methods as needed
+
+Test these endpoints:
+"""
+        # Add endpoint list for context
+        for ep in app_endpoints[:5]:  # Limit to first 5 to keep prompt concise
+            simpler_prompt += f"- {', '.join(ep.http_methods)} {ep.url_pattern}\n"
+
+        simpler_prompt += """
+
+REQUIREMENTS:
+- Use absolute imports: from apps.{app_name}.models import ModelName
+- Use get_user_model() for User model
+- Handle JWT authentication: self.client.cookies['access_token'] = token
+- Convert UUIDs to strings in URLs
+- Write working, executable Python code
+
+END OF INSTRUCTIONS. OUTPUT CODE ONLY."""
+
+    def _fix_syntax_error(self, content: str, error: SyntaxError) -> str:
+        """
+        Attempt to fix syntax errors in generated code.
+
+        Args:
+            content: The generated code with syntax errors
+            error: The SyntaxError object
+
+        Returns:
+            Fixed code (may still have errors)
+        """
+        lines = content.split('\n')
+        line_num = error.lineno if hasattr(error, 'lineno') else 0
+
+        # Fix specific patterns based on error message
+        if "unmatched ')'" in str(error).lower():
+            # Find and fix unmatched parentheses
+            lines[line_num - 1] = self._fix_line_parens(lines[line_num - 1])
+        elif "invalid syntax" in str(error).lower():
+            # Try to fix various syntax issues
+            lines[line_num - 1] = self._fix_invalid_syntax(lines[line_num - 1])
+
+        return '\n'.join(lines)
+
+    def _fix_line_parens(self, line: str) -> str:
+        """Fix unmatched parentheses in a line."""
+        # Fix 1: Missing closing parenthesis before quote in f-string
+        if 'f\'' in line or 'f"' in line:
+            # Pattern: f'/path/{str(id)}' -> f'/path/{str(id)})'
+            line = re.sub(r"f['\"]([^{\'\"]}*{str\([^)]+\)(?!\))", lambda m: m.group(0) + ")" if m.group(0).count('(') > m.group(0).count(')') else m.group(0), line)
+
+        # Fix 2: Missing closing parenthesis before quote
+        line = re.sub(r"(\w+)\('([^']*)'(?!\))", r"\1('\2')", line)
+        line = re.sub(r'(\w+)\("([^"]*)"(?!\))', r'\1("\2")', line)
+
+        return line
+
+    def _fix_invalid_syntax(self, line: str) -> str:
+        """Fix invalid syntax in a line."""
+        # Fix 1: Missing colon after function definition
+        if re.search(r'def\s+\w+\([^)]*\)\s*$', line):
+            return line + ':'
+
+        # Fix 2: Missing colon in dictionary
+        if re.search(r'\{\s*\w+\s*[^:,\s\}]', line):
+            # Find where colon should be added
+            line = re.sub(r'(\{\s*\w+\s*)([^:,\s\}])', r'\1: \2', line)
+
+        return line
 
     def _clean_code(self, content: str) -> str:
         """
@@ -763,6 +990,19 @@ class EnhancedTestGenerator:
         content = re.sub(r'from \.serializers import', f'from apps.{self.repo_path.name} import', content)
         content = re.sub(r'from \.views import', f'from apps.{self.repo_path.name} import', content)
 
+        # Fix incorrect User imports - replace bad patterns with correct ones
+        # Pattern 1: from apps.user import User -> from apps.user.models import User
+        content = re.sub(r'from apps\.(\w+) import User', r'from apps.\1.models import User', content)
+        # Pattern 2: from apps.user.models.models import User -> from apps.user.models import User
+        content = re.sub(r'from apps\.(\w+)\.models\.models import User', r'from apps.\1.models import User', content)
+        # Pattern 3: from apps.user.models import User (keep this - it's correct)
+        # Pattern 4: from django.contrib.auth.models import User -> get_user_model()
+        content = re.sub(
+            r'from django\.contrib\.auth\.models import User',
+            'from django.contrib.auth import get_user_model\nUser = get_user_model()',
+            content
+        )
+
         # Fix incorrect self.str() calls - replace with built-in str()
         # Pattern: self.str(something) -> str(something)
         # Multiple patterns to catch variations
@@ -797,6 +1037,23 @@ class EnhancedTestGenerator:
                 content
             )
 
+        # Fix PIL Image.save() format issues - common AI mistake
+        # Pattern: image.save(file, 'jpg') -> image.save(file, 'JPEG')
+        # Pattern: image.save(file, 'JPG') -> image.save(file, 'JPEG')
+        # Pattern: image.save(file, 'png') -> image.save(file, 'PNG')
+        content = re.sub(
+            r"image\.save\(file,\s*['\"](jpg|jpeg)['\"]",
+            r"image.save(file, 'JPEG')",
+            content,
+            flags=re.IGNORECASE
+        )
+        content = re.sub(
+            r"image\.save\(file,\s*['\"](png)['\"]",
+            r"image.save(file, 'PNG')",
+            content,
+            flags=re.IGNORECASE
+        )
+
         # Fix UUID serialization - common patterns
         # Pattern 1: 'role': role_obj.id -> 'role': str(role_obj.id)
         content = re.sub(
@@ -823,7 +1080,33 @@ class EnhancedTestGenerator:
         except SyntaxError as e:
             console.print(f"    [yellow]⚠ Syntax warning in generated code: {e}[/yellow]")
             # Try to fix common issues
-            # Check for unmatched parentheses
+
+            # Fix 1: Fix missing closing parenthesis in f-strings
+            # Pattern: f'/path/{str(id)}' -> f'/path/{str(id)})'
+            content = re.sub(
+                r"f'([^{'}']*{str\([^)]+\)(?!))'",
+                lambda m: m.group(0) + ")" if m.group(0).count('(') > m.group(0).count(')') else m.group(0),
+                content
+            )
+
+            # Fix 2: Fix missing closing parenthesis in URL paths
+            # Pattern: /api/path/{var}' -> /api/path/{var})'
+            content = re.sub(r"(/\{[^}]+)'}", r"\1)", content)
+
+            # Fix 3: Fix missing closing parenthesis before quotes
+            # Pattern: method('arg' -> method('arg')
+            content = re.sub(r"(\w+)\('([^']*)'(?!\))", r"\1('\2')", content)
+            content = re.sub(r'(\w+)\("([^"]*)"(?!\))', r'\1("\2")', content)
+
+            # Fix 4: Fix unmatched parentheses at end of lines
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                # Check if line has opening but not closing paren
+                if line.count('(') > line.count(')') and not line.rstrip().endswith('\\'):
+                    lines[i] = line + ')'
+            content = '\n'.join(lines)
+
+            # Fix 5: Balance unmatched parentheses at file level (last resort)
             open_parens = content.count('(')
             close_parens = content.count(')')
             if open_parens > close_parens:
