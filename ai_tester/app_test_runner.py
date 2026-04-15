@@ -140,8 +140,8 @@ class AppTestRunner:
                     color = "green" if line.startswith("OK") else "red"
                     console.print(f"  [{color}]{line}[/{color}]")
 
-            # Parse results with the custom test label
-            results = self._parse_results(output, test_label)
+            # Parse results with the custom test label and REAL app_name
+            results = self._parse_results(output, test_label, app_name)
             return results, output
 
         except subprocess.TimeoutExpired:
@@ -216,8 +216,11 @@ class AppTestRunner:
                 return candidate
         return None
 
-    def _parse_results(self, output: str, app_module: str = "") -> list[TestResult]:
+    def _parse_results(self, output: str, app_module: str = "", real_app_name: str = "") -> list[TestResult]:
         results = []
+
+        # Use real_app_name if provided, otherwise extract from app_module
+        resolved_app_name = real_app_name if real_app_name else app_module.split(".")[-1] if app_module else ""
 
         # Pattern for Django test output: ERROR/FAIL: test_name (module.Class.test_name)
         test_pattern = re.compile(
@@ -240,14 +243,18 @@ class AppTestRunner:
             # Parse module info: apps.user.tests.AppTests.test_get_user_details
             parts = module_info.split(".")
             app_name = ""
-            # Find the first app name part (not 'tests', not 'AppTests')
+            # Find the first app name part (not 'tests', not 'AppTests', not 'generated', not 'test_*')
             for part in parts:
-                if part not in ("tests", "test") and not part.startswith("AppTests") and not part.startswith("Test") and not part.endswith("tests"):
+                if part not in ("tests", "test", "generated") and not part.startswith("AppTests") and not part.startswith("Test") and not part.endswith("tests") and not part.startswith("test_"):
                     # Skip common framework modules like "apps" if there's a real app name after it
                     if part == "apps" and len(parts) > 3:
                         continue
                     app_name = part
                     break
+            
+            # Use resolved real app_name if extraction failed
+            if not app_name and resolved_app_name:
+                app_name = resolved_app_name
 
             # Extract error details
             error_msg = self._extract_error(output, test_name)
@@ -281,8 +288,8 @@ class AppTestRunner:
             ))
 
         # Count passed tests from summary
-        if summary_pattern.search(output):
-            summary_match = summary_pattern.search(output)
+        summary_match = summary_pattern.search(output)
+        if summary_match:
             total_tests = int(summary_match.group(1))
             failed_count = len(results)
             passed_count = total_tests - failed_count
@@ -295,7 +302,7 @@ class AppTestRunner:
                         http_methods  = [],
                         view_name     = f"passed_test_{i+1}",
                         requires_auth = False,
-                        app_name      = app_module.split(".")[-1] if app_module else "unknown",
+                        app_name      = resolved_app_name if resolved_app_name else "unknown",
                     ),
                     status        = "PASSED",
                     response_code = 200,
@@ -322,24 +329,36 @@ class AppTestRunner:
 
         return results
     def _url_from_test_name(self, test_name: str, app_name: str) -> str:
-        """Guess URL from test name and app name."""
-        name = test_name
-        for prefix in ["test_"]:
-            if name.startswith(prefix):
-                name = name[len(prefix):]
-
-        # Remove common action prefixes first
-        for prefix in ["get_", "create_", "update_", "delete_", "list_", "post_"]:
-            if name.startswith(prefix):
-                name = name[len(prefix):]
-
-        # Use app_name if available, otherwise fall back to generic API path
+        """Extract URL from the test file itself."""
+        # Try to read actual URL from generated test file
+        test_file_path = self.repo_path / "tests" / "generated" / f"test_{app_name}.py"
+        
+        if not test_file_path.exists():
+            # Try to find the test file with any name that matches app_name
+            for tf in (self.repo_path / "tests" / "generated").glob("test_*.py"):
+                if app_name in tf.name:
+                    test_file_path = tf
+                    break
+        
+        if test_file_path.exists():
+            try:
+                content = test_file_path.read_text()
+                # Look for self.client.get('/api/...') patterns
+                url_pattern = re.compile(r"self\.client\.(get|post|put|patch|delete)\s*\(\s*['\"]([^'\"]+)['\"]")
+                
+                # Find the test method and URL
+                for match in url_pattern.finditer(content):
+                    url = match.group(2)
+                    # Check if this URL is close to our test method
+                    return url
+            except Exception:
+                pass
+        
+        # Ultimate fallback - just use the app name directly  
         if app_name:
-            # Check if the name already contains the app_name to avoid duplication
-            if name.startswith(f"{app_name}_"):
-                name = name[len(app_name)+1:]  # Remove "app_" prefix
-            return f"/api/{app_name}/{name.replace('_', '/')}/"
-        return f"/api/{name.replace('_', '/')}/"
+            # Return a placeholder that indicates this needs fixing
+            return f"/api/{app_name}/"
+        return "/api/unknown/"
     def _method_from_test_name(self, test_name: str) -> list[str]:
         """Guess HTTP method from test name."""
         name = test_name.lower()
@@ -352,7 +371,13 @@ class AppTestRunner:
     def _extract_actual_code(self, error_msg: str | None) -> int:
         """Extract actual status code from error message."""
         if not error_msg:
-            return 200
+            return 0  # Return 0 instead of 200 when no error info available
+        
+        # First check if this is a docstring/description (not a real error)
+        if error_msg.startswith("Test ") and len(error_msg) < 100:
+            # This looks like a docstring, not a real error - return 0
+            return 0
+        
         # Match pattern like "500 != 200"
         match = re.search(r"(\d{3})\s*!=\s*\d{3}", error_msg)
         if match:

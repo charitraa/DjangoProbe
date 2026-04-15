@@ -340,8 +340,10 @@ class AppAnalyzer:
                                             meta_item.value
                                         )
 
-                # Extract fields
+                # Extract fields - skip nested classes like Meta
                 for item in node.body:
+                    if isinstance(item, ast.ClassDef):
+                        continue  # Skip nested classes like Meta
                     if isinstance(item, ast.Assign):
                         for target in item.targets:
                             if isinstance(target, ast.Name) and not target.id.startswith("_"):
@@ -558,17 +560,54 @@ class AppAnalyzer:
         return "Field"
 
     def _is_field_required(self, assign_node: ast.Assign) -> bool:
-        """Check if a field is required."""
+        """Check if a field is required.
+        
+        A field is required if:
+        1. blank=False is explicitly set
+        2. null=False is explicitly set  
+        3. No blank/null is specified (Django defaults to required for most fields)
+        
+        Only blank=True or null=True makes a field optional.
+        """
         if isinstance(assign_node.value, ast.Call):
+            has_blank_true = False
+            has_null_true = False
+            has_explicit_blank = False
+            has_explicit_null = False
+            
             for keyword in assign_node.value.keywords:
                 if keyword.arg == "blank":
+                    has_explicit_blank = True
                     value = ast.unparse(keyword.value)
-                    if value == "False":
-                        return True
+                    if value == "True":
+                        has_blank_true = True
                 if keyword.arg == "null":
+                    has_explicit_null = True
                     value = ast.unparse(keyword.value)
-                    if value == "False":
-                        return True
+                    if value == "True":
+                        has_null_true = True
+            
+            # If blank=True or null=True, field is optional
+            if has_blank_true or has_null_true:
+                return False
+            
+            # If neither blank nor null is explicitly set, Django defaults apply:
+            # - For most CharField/TextField types: blank=False (required in forms)
+            # - For DateField/DateTimeField: null=False (required in forms)
+            # Only nullable fields (null=True) are truly optional
+            if has_explicit_null and not has_null_true:
+                # null=False explicitly set, field is required
+                return True
+            
+            if not has_explicit_blank and not has_explicit_null:
+                # Neither blank nor null specified - Django defaults to required
+                return True
+            
+            # If only blank is explicitly set (blank=True, no null specified)
+            # null defaults to False, so field is required
+            if has_explicit_blank and not has_explicit_null:
+                return True
+                
         return False
 
     def _get_field_default(self, assign_node: ast.Assign) -> str | None:
@@ -686,6 +725,9 @@ Return ONLY the prompt text - no markdown, no explanation."""
                     main_cookie = cookie_names[0] if cookie_names else 'access_token'
                     data_key = auth_struct.get('data_key', 'data')
                     message_key = auth_struct.get('message_key', 'message')
+                    
+                    # Get login URL from analysis or use default
+                    login_url = analysis.get('auth_info', {}).get('login_url') or auth_struct.get('login_url', '/api/user/login/')
 
                     user_prompt += f"""
 ## CRITICAL: DETECTED COOKIE-BASED JWT AUTHENTICATION
@@ -935,7 +977,7 @@ Return ONLY the prompt text - this will be used to generate actual test code. Be
             ],
         )
 
-        if response:
+        if response and response.choices and response.choices[0].message.content:
             ai_generated_prompt = response.choices[0].message.content
 
             # Clean the response
@@ -961,6 +1003,31 @@ Return ONLY the prompt text - this will be used to generate actual test code. Be
         console.print(f"\n  [bold cyan]→ Building analysis context for {app_name}...[/bold cyan]")
 
         context = f"\n## App Name: {app_name}\n"
+
+        # Add authentication info from both analysis sources
+        if "auth_info" in analysis:
+            auth_info = analysis["auth_info"]
+            context += f"\n### Authentication:\n"
+            context += f"  Method: {auth_info.get('method', 'unknown')}\n"
+            # Use login URL from auth_info or fallback to common Django REST patterns
+            login_url = auth_info.get('login_url')
+            if not login_url:
+                # Common patterns for DRF projects
+                login_url = "/api/user/login/"
+            context += f"  Login URL: {login_url}\n"
+            if auth_info.get('token_names'):
+                context += f"  Token names: {', '.join(auth_info.get('token_names'))}\n"
+
+        if "auth_response_structure" in analysis:
+            auth_struct = analysis["auth_response_structure"]
+            if auth_struct and auth_struct.get("detected"):
+                context += f"\n### Auth Response Structure:\n"
+                context += f"  Token path: response.json()['{auth_struct.get('token_path', 'access')}']\n"
+                context += f"  Response format: {auth_struct.get('response_format', 'flat')}\n"
+                if auth_struct.get('auth_method') == "cookie_jwt":
+                    data_key = auth_struct.get('data_key', 'data')
+                    context += f"  Data key: '{data_key}' (nested response)\n"
+                    context += f"  IMPORTANT: Token is at response.json()['{data_key}']['{auth_struct.get('token_path', 'access')}']\n"
 
         # Models
         if analysis["models"]:

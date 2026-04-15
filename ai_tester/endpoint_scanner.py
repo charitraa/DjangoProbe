@@ -22,6 +22,9 @@ class EndpointScanner:
         "IsAdminUser",
         "IsAuthenticatedOrReadOnly",
         "DjangoModelPermissions",
+        "LoginRequiredPermission",
+        "HasPageAccess",
+        "AllowAny",
     }
     
     SKIP_URL_PREFIXES = {

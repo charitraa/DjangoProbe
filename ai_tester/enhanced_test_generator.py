@@ -440,20 +440,24 @@ class EnhancedTestGenerator:
         - You MUST create an authentication helper method
         - CRITICAL: The actual login response structure has been ANALYZED
         - Login URL: {login_url}
-        - Access Token Path: response.json()['{token_path}']
-        - Example authentication helper (uses DETECTED token path):
+        - IMPORTANT: The response is NESTED. Token is at: response.json()['data']['{token_path}']
+        - Example authentication helper (uses NESTED response):
           ```python
           def authenticate_jwt(self, email, password):
               payload = {{'email': email, 'password': password}}
               response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
               if response.status_code == 200:
-                  token = response.json()['{token_path}']  # CRITICAL: Use detected path
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
-                  return response.json()
+                  data = response.json()
+                  # Handle nested response: {{"data": {{"access": "..."}}}}
+                  token = data.get('data', {{}}).get('{token_path}') or data.get('{token_path}')
+                  if token:
+                      # Set both header and cookie for compatibility
+                      self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
+                      self.client.cookies['access_token'] = token
+                  return data
               return None
           ```
         - Call this helper in setUp() or before authenticated requests
-        - IMPORTANT: Use the exact token path '{token_path}', do NOT assume 'access'
         - DO NOT use force_authenticate() — it doesn't exist on Django's Client
         - DO NOT use APIClient — use Django's test Client
 """
@@ -534,6 +538,49 @@ class EnhancedTestGenerator:
         - 403: Forbidden
         - 404: Not found
         - 405: Method not allowed
+
+        ## CRITICAL URL PATTERNS:
+        - Use the API prefix from settings (usually /api/)
+        - Include app name in URL: /api/<app_name>/<endpoint>
+        - Use actual URL paths directly (NOT reverse() with namespaced names)
+        - Example CORRECT usage: self.client.get('/api/enquiry/list/')
+        - Example WRONG usage: reverse('enquiry:list') - this won't work because namespace may not be registered
+        - For endpoints with UUID parameters: /api/enquiry/get/<uuid>/ - use actual UUID values in tests
+        - DO NOT make up URLs - use the exact URL paths listed in endpoints above
+
+        ## CRITICAL IMPORT PATTERNS:
+        - Use this format: from apps.<app_name>.models import ModelName
+        - Example: from apps.apply.models import Application (NOT from apps.apply import Application)
+        - Example: from apps.user.models import User (NOT from apps.user import User)
+        - DO NOT use: from apps.<app_name> import <model> - this imports the app module, not the model
+        - DO NOT use: from django.contrib.auth.models import User - use custom user model
+        - For User model: from apps.user.models import User
+
+        ## CRITICAL SETUP ORDER:
+        - In setUp(), FIRST create all test data (self.user, self.user_data, etc.)
+        - THEN call authenticate() method AFTER data is ready
+        - WRONG ORDER: self.auth = self.get_auth_helper() before self.user_data is set
+        - CORRECT ORDER: 1) self.user_data = {...}  2) self.user = User.objects.create(...)  3) self.authenticate()
+
+        ## CRITICAL AUTHENTICATION FOR THIS PROJECT:
+        - This project uses JWT with COOKIE-BASED authentication
+        - Login response is NESTED: {"data": {"access": "token_value", "user": {...}}}
+        - Access token is at: response.json()['data']['access']
+        - The correct authentication helper pattern:
+          ```python
+          def authenticate(self):
+              response = self.client.post('/api/user/login/', 
+                  data=json.dumps({'email': 'test@example.com', 'password': 'testpass123'}),
+                  content_type='application/json')
+              if response.status_code == 200:
+                  token = response.json().get('data', {}).get('access')
+                  if token:
+                      self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
+                      self.client.cookies['access_token'] = token
+          ```
+        - Call authenticate() in setUp() after creating test data
+        - DO NOT use rest_framework.authtoken - this project uses JWT
+        - DO NOT use Token.objects.create() - use the login endpoint
 
         Generate the complete test file now — ONLY Python code, no markdown, no explanation."""
 
@@ -1191,12 +1238,57 @@ CRITICAL RULES:
             content
         )
 
-        # Fix incorrect self.str() calls - replace with built-in str()
-        # Pattern: self.str(something) -> str(something)
-        # Multiple patterns to catch variations
-        content = re.sub(r'self\.str\(', r'str(', content)  # self.str(
-        content = re.sub(r'self\.str \(', r'str(', content)  # self.str (
-        content = re.sub(r'self\.  str\(', r'str(', content)  # self.  str(
+        # Fix wrong import patterns for models
+        # Pattern: from apps.<app> import <Model> -> from apps.<app>.models import <Model>
+        content = re.sub(r'from apps\.(\w+) import (?!User|get_user_model)', r'from apps.\1.models import ', content)
+
+        # Fix wrong get_user_model import pattern
+        content = re.sub(r'from django\.contrib\.auth import get_user_model\nUser = get_user_model\(\)', 'from apps.user.models import User', content)
+
+        # Fix reverse() calls - replace with direct URL paths
+        # reverse('app:name') -> '/api/app/name/'  
+        content = re.sub(r"reverse\(['\"]apply:(\w+)['\"]\)", r"'/api/application/\1/'", content)
+        content = re.sub(r"reverse\(['\"]enquiry:(\w+)['\"]\)", r"'/api/enquiry/\1/'", content)
+        content = re.sub(r"reverse\(['\"]user:(\w+)['\"]\)", r"'/api/user/\1/'", content)
+        content = re.sub(r"reverse\(['\"]gallery:(\w+)['\"]\)", r"'/api/gallery/\1/'", content)
+        content = re.sub(r"reverse\(['\"]notices:(\w+)['\"]\)", r"'/api/notices/\1/'", content)
+        content = re.sub(r"reverse\(['\"]calender:(\w+)['\"]\)", r"'/api/calendar/\1/'", content)
+        content = re.sub(r"reverse\(['\"]downloads:(\w+)['\"]\)", r"'/api/downloads/\1/'", content)
+        content = re.sub(r"reverse\(['\"]teams:(\w+)['\"]\)", r"'/api/teams/\1/'", content)
+        content = re.sub(r"reverse\(['\"]dashboard:(\w+)['\"]\)", r"'/api/dashboard/\1/'", content)
+        content = re.sub(r"reverse\(['\"]analytics:(\w+)['\"]\)", r"'/api/analytics/\1/'", content)
+        
+        # Handle reverse with args - replace with URL patterns
+        content = re.sub(r"reverse\(['\"]apply:(\w+)['\"], args=\[(\w+)\]\)", r"'/api/application/\1/{\2}/'", content)
+        content = re.sub(r"reverse\(['\"]enquiry:(\w+)['\"], args=\[(\w+)\]\)", r"'/api/enquiry/\1/{\2}/'", content)
+        content = re.sub(r"reverse\(['\"]user:(\w+)['\"], args=\[(\w+)\]\)", r"'/api/user/\1/{\2}/'", content)
+        
+        # Handle reverse with kwargs
+        content = re.sub(r"reverse\(['\"]apply:(\w+)['\"], kwargs=\{(\w+): (\w+)\}\)", r"'/api/application/\1/{\3}/'", content)
+
+        # Fix wrong authentication imports/typos
+        content = re.sub(r'from rest_framework\.autenfication', 'from rest_framework.authentication', content)
+        content = re.sub(r'from rest_framework\.authtoken', '# rest_framework.authtoken not used', content)
+        
+        # Fix wrong token endpoints - use /api/user/login/ not /api/auth/token/
+        content = re.sub(r"client\.post\(['\"]/api/auth/token/['\"]", "client.post('/api/user/login/'", content)
+        content = re.sub(r"client\.post\(['\"]/api/token/['\"]", "client.post('/api/user/login/'", content)
+
+        # Fix user creation - User model uses 'full_name' not 'name'
+        content = re.sub(r"'name':\s*'Test User'", "'full_name': 'Test User'", content)
+        content = re.sub(r"'name':\s*'[^']*'", lambda m: m.group(0).replace("'name':", "'full_name':"), content)
+
+        # Fix incorrect self.str() calls - replace with proper str() conversion
+        # Handle various patterns:
+        # 1. self.str(user.id) -> str(self.user.id)
+        # 2. self.str(page.id) -> str(self.page.id)
+        # 3. self.str(application.id) -> str(self.application.id)
+        # 4. self.str(enquiry.id) -> str(self.enquiry.id)
+        # 5. self.str(regular_user.id) -> str(self.regular_user.id)
+        content = re.sub(r"self\.str\(self\.(\w+)\.(\w+)\)", r"str(self.\1.\2)", content)  # self.str(self.user.id) -> str(self.user.id)
+        content = re.sub(r'self\.str\((\w+)\.(\w+)\)', r'str(self.\1.\2)', content)  # self.str(user.id) -> str(self.user.id)
+        content = re.sub(r'self\.str\((self\.\w+)\.id\)', r'str(\1.id)', content)  # self.str(self.regular_user.id) -> str(self.regular_user.id)
+        content = re.sub(r'self\.str\(', r'str(', content)  # self.str( -> str( (remaining cases)
 
         # Fix force_authenticate usage - replace with proper authentication
         # For JWT projects, replace with JWT authentication pattern
