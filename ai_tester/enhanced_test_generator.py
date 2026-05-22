@@ -43,11 +43,17 @@ class EnhancedTestGenerator:
         self.app_module_map = self._build_app_module_map()
 
     def _build_app_module_map(self) -> dict[str, str]:
-        """Build mapping of app names to their full module paths."""
+        """Build mapping of app last-segment names to their full module paths.
+
+        `ai_helper.installed_apps` is a list of dicts: {module, app_name, app_dir}.
+        The previous implementation treated each entry as a string and silently
+        produced an empty map — which broke both the prompt's import guidance and
+        the hallucinated-import validator.
+        """
         return {
-            app.split('.')[-1]: app
+            app["app_name"]: app["module"]
             for app in self.ai_helper.installed_apps
-            if app and '.' in app  # Only include apps with module paths
+            if app.get("app_name") and app.get("module")
         }
 
     # PUBLIC
@@ -729,16 +735,24 @@ class EnhancedTestGenerator:
                 compile(fixed_content, f'<test_{app_name}>', 'exec')
                 console.print(f"    [green]✓ Syntax error fixed successfully[/green]")
                 return True, fixed_content
-            except SyntaxError as e2:
-                console.print(f"    [red]✗ Could not fix syntax error: {e2}[/red]")
+            except SyntaxError:
+                # Last-ditch: drop trailing junk and keep the longest valid prefix.
+                # Only accept it if the salvaged code still has a TestCase + test_ method,
+                # otherwise we'd hand back a no-op file that runs zero tests.
+                salvaged = self._truncate_to_valid_prefix(content)
+                if salvaged and 'TestCase' in salvaged and 'def test_' in salvaged:
+                    dropped = content.count('\n') - salvaged.count('\n')
+                    console.print(
+                        f"    [green]✓ Salvaged by dropping {dropped} trailing line(s)[/green]"
+                    )
+                    return True, salvaged
+                console.print(f"    [red]✗ Could not fix syntax error[/red]")
                 return False, content
 
-        # Check for specific syntax patterns that cause issues
-        # Pattern 1: Missing colons in dictionary definitions
-        if re.search(r'\{[^}]*\w[^:,\s\}]', content):
-            console.print(f"    [yellow]⚠ Possible missing colon in dictionary definition[/yellow]")
-
         # Pattern 2: Unmatched brackets/parentheses
+        # (the compile() check above already catches real "missing colon" syntax errors;
+        # the previous heuristic regex matched normal dict literals and produced a
+        # false-positive warning on every successful app.)
         if content.count('{') != content.count('}'):
             console.print(f"    [yellow]⚠ Unmatched curly braces in code[/yellow]")
         if content.count('[') != content.count(']'):
@@ -1242,6 +1256,12 @@ CRITICAL RULES:
         # Pattern: from apps.<app> import <Model> -> from apps.<app>.models import <Model>
         content = re.sub(r'from apps\.(\w+) import (?!User|get_user_model)', r'from apps.\1.models import ', content)
 
+        # Validate every `from apps.<x>...` against the actually-installed apps. AI models
+        # routinely hallucinate names (apps.team vs apps.teams, apps.category that doesn't
+        # exist at all). A single bad import ImportErrors the whole test module, so we try
+        # singular/plural variants first and drop the line as a last resort.
+        content = self._fix_hallucinated_app_imports(content)
+
         # Fix wrong get_user_model import pattern
         content = re.sub(r'from django\.contrib\.auth import get_user_model\nUser = get_user_model\(\)', 'from apps.user.models import User', content)
 
@@ -1277,6 +1297,28 @@ CRITICAL RULES:
         # Fix user creation - User model uses 'full_name' not 'name'
         content = re.sub(r"'name':\s*'Test User'", "'full_name': 'Test User'", content)
         content = re.sub(r"'name':\s*'[^']*'", lambda m: m.group(0).replace("'name':", "'full_name':"), content)
+
+        # Strip 'username' from generated tests when the project's User model doesn't have it.
+        # ProjectAnalyzer detects the real User fields; if 'username' isn't there, the AI's
+        # default habit of including it will crash create_user() with TypeError.
+        if (
+            self.analysis
+            and self.analysis.safe_user_fields
+            and 'username' not in self.analysis.safe_user_fields
+        ):
+            # Dict-literal form on its own line: 'username': 'value', (or double-quoted, with/without trailing comma)
+            content = re.sub(
+                r"^[ \t]*['\"]username['\"]\s*:\s*[^\n]*?,?[ \t]*\n",
+                "",
+                content,
+                flags=re.MULTILINE,
+            )
+            # Keyword-arg form inside a call: username='value', or username="value",
+            content = re.sub(
+                r"\busername\s*=\s*['\"][^'\"]*['\"]\s*,?\s*",
+                "",
+                content,
+            )
 
         # Fix incorrect self.str() calls - replace with proper str() conversion
         # Handle various patterns:
@@ -1354,58 +1396,101 @@ CRITICAL RULES:
             content
         )
 
-        # Validate basic Python syntax
+        # Validate basic Python syntax. If broken, try to salvage by truncating from
+        # the end of the file backwards until we find a valid prefix. AI outputs often
+        # have trailing junk (stray prose, fence markers, an unfinished test) — keeping
+        # the valid prefix is far safer than the previous "balance brackets" heuristic,
+        # which appended `)` to every multi-line call and silently broke valid code.
         try:
             compile(content, '<string>', 'exec')
         except SyntaxError as e:
             console.print(f"    [yellow]⚠ Syntax warning in generated code: {e}[/yellow]")
-            # Try to fix common issues
-
-            # Fix 1: Fix missing closing parenthesis in f-strings
-            # Pattern: f'/path/{str(id)}' -> f'/path/{str(id)})'
-            content = re.sub(
-                r"f'([^{'}']*{str\([^)]+\)(?!))'",
-                lambda m: m.group(0) + ")" if m.group(0).count('(') > m.group(0).count(')') else m.group(0),
-                content
-            )
-
-            # Fix 2: Fix missing closing parenthesis in URL paths
-            # Pattern: /api/path/{var}' -> /api/path/{var})'
-            content = re.sub(r"(/\{[^}]+)'}", r"\1)", content)
-
-            # Fix 3: Fix missing closing parenthesis before quotes
-            # Pattern: method('arg' -> method('arg')
-            content = re.sub(r"(\w+)\('([^']*)'(?!\))", r"\1('\2')", content)
-            content = re.sub(r'(\w+)\("([^"]*)"(?!\))', r'\1("\2")', content)
-
-            # Fix 4: Fix unmatched parentheses at end of lines
-            lines = content.split('\n')
-            for i, line in enumerate(lines):
-                # Check if line has opening but not closing paren
-                if line.count('(') > line.count(')') and not line.rstrip().endswith('\\'):
-                    lines[i] = line + ')'
-            content = '\n'.join(lines)
-
-            # Fix 5: Balance unmatched parentheses at file level (last resort)
-            open_parens = content.count('(')
-            close_parens = content.count(')')
-            if open_parens > close_parens:
-                content += ')' * (open_parens - close_parens)
-
-            open_brackets = content.count('[')
-            close_brackets = content.count(']')
-            if open_brackets > close_brackets:
-                content += ']' * (open_brackets - close_brackets)
-
-            open_braces = content.count('{')
-            close_braces = content.count('}')
-            if open_braces > close_braces:
-                content += '}' * (open_braces - close_braces)
-
-            # Fix 6: Normalize indentation (convert tabs to spaces, fix inconsistent indentation)
-            content = self._normalize_indentation(content)
+            salvaged = self._truncate_to_valid_prefix(content)
+            if salvaged is not None and salvaged.strip() != content.strip():
+                dropped = content.count('\n') - salvaged.count('\n')
+                console.print(
+                    f"    [dim]→ Salvaged code by dropping {dropped} trailing line(s)[/dim]"
+                )
+                content = salvaged
 
         return content
+
+    def _truncate_to_valid_prefix(self, content: str) -> str | None:
+        """
+        Find the longest leading prefix of `content` that parses as Python.
+
+        Walks backwards from the end of the file, dropping one line at a time, until
+        compile() succeeds. Returns the salvaged prefix, or None if no prefix parses
+        (in which case the caller keeps the original).
+        """
+        lines = content.split('\n')
+        for end in range(len(lines), 0, -1):
+            candidate = '\n'.join(lines[:end])
+            try:
+                compile(candidate, '<truncate>', 'exec')
+                return candidate
+            except SyntaxError:
+                continue
+        return None
+
+    def _fix_hallucinated_app_imports(self, content: str) -> str:
+        """
+        Rewrite or drop `from apps.<x>...` lines that name an app that isn't installed.
+
+        Strategy:
+        1. If <x> is a real installed app, leave the line alone.
+        2. Try simple singular/plural variants (team↔teams, category↔categories).
+        3. If no variant matches, comment the line out so the rest of the module still
+           imports — the test methods that needed those symbols will fail individually
+           rather than blocking the entire file with ImportError.
+        """
+        if not self.app_module_map:
+            return content
+
+        valid = set(self.app_module_map.keys())
+
+        def variants(name: str) -> list[str]:
+            cands: list[str] = []
+            if name.endswith('ies'):
+                cands.append(name[:-3] + 'y')      # categories -> category
+            if name.endswith('y'):
+                cands.append(name[:-1] + 'ies')    # category -> categories
+            if name.endswith('s') and len(name) > 1:
+                cands.append(name[:-1])            # teams -> team
+            cands.append(name + 's')               # team -> teams
+            return cands
+
+        import_re = re.compile(r'^(\s*)from apps\.(\w+)(\.\w+)?\s+import\s+(.+)$')
+        out_lines: list[str] = []
+        rewritten: dict[str, str] = {}
+        dropped: list[str] = []
+
+        for line in content.split('\n'):
+            m = import_re.match(line)
+            if not m:
+                out_lines.append(line)
+                continue
+            indent, app_name, submodule, imports = m.groups()
+            if app_name in valid:
+                out_lines.append(line)
+                continue
+            match = next((v for v in variants(app_name) if v in valid), None)
+            if match:
+                rewritten[app_name] = match
+                out_lines.append(
+                    f"{indent}from apps.{match}{submodule or '.models'} import {imports}"
+                )
+            else:
+                dropped.append(line.strip())
+                out_lines.append(f"{indent}# DjangoProbe: dropped hallucinated import: {line.strip()}")
+
+        if rewritten:
+            for bad, good in rewritten.items():
+                console.print(f"    [dim]Rewrote import: apps.{bad} → apps.{good}[/dim]")
+        if dropped:
+            console.print(f"    [yellow]⚠ Dropped {len(dropped)} hallucinated import(s)[/yellow]")
+
+        return '\n'.join(out_lines)
 
 
 def generate_with_enhanced_analyzer(

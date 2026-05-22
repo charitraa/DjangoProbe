@@ -23,9 +23,9 @@ class GeminiProvider(BaseProvider):
     Requires GEMINI_API_KEY environment variable.
     """
 
-    DEFAULT_MODEL = "gemini-1.5-flash"
+    DEFAULT_MODEL = "gemini-2.0-flash"
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-    FALLBACK_MODEL = "gemini-2.0-flash"
+    FALLBACK_MODEL = "gemini-2.5-flash"
 
     # Available models with characteristics
     MODELS = {
@@ -119,7 +119,7 @@ class GeminiProvider(BaseProvider):
             if any(keyword in error_str.lower() for keyword in ["not found", "not_found", "404", "not supported"]):
                 # Try fallback model with same parameters but different model
                 fallback_params = dict(default_params)
-                fallback_params['model'] = "gemini-1.5-flash"
+                fallback_params['model'] = self.FALLBACK_MODEL
                 try:
                     response = self.client.chat.completions.create(
                         messages=messages,
@@ -127,7 +127,7 @@ class GeminiProvider(BaseProvider):
                     )
                     return response.choices[0].message.content
                 except Exception as fallback_err:
-                    raise RuntimeError(f"Gemini API error (tried {self.model} then gemini-1.5-flash): {fallback_err}")
+                    raise RuntimeError(f"Gemini API error (tried {self.model} then {self.FALLBACK_MODEL}): {fallback_err}")
             
             raise RuntimeError(f"Gemini API error: {error_str}")
 

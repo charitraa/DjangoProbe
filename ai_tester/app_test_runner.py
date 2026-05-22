@@ -250,7 +250,7 @@ class AppTestRunner:
             skip_parts = {"tests", "test", "generated", "apps", "models", "views", "serializers", "urls"}
             skip_prefixes = {"AppTests", "Test"}
             skip_suffixes = {"tests", "TestCase"}
-            
+
             for part in parts:
                 # Skip parts that are definitely not app names
                 if part in skip_parts:
@@ -259,6 +259,12 @@ class AppTestRunner:
                     continue
                 if any(part.endswith(s) for s in skip_suffixes):
                     continue
+                # `tests.generated.test_<app>.Class.method` — strip the generated-file prefix
+                # so we don't end up with `app_name = "test_enquiry"` (which then produces
+                # bogus URLs like `/api/test_enquiry/` in the report).
+                if part.startswith("test_") and len(part) > len("test_"):
+                    app_name = part[len("test_"):]
+                    break
                 # This is likely an app name
                 app_name = part
                 break

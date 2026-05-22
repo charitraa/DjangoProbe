@@ -65,7 +65,7 @@ class ProviderManager:
             "ollama_model": os.environ.get("OLLAMA_MODEL", "llama3.2"),
             "together_model": os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
             "anthropic_model": os.environ.get("ANTHROPIC_MODEL", "claude-3.5-sonnet"),
-            "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+            "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL", ""),
             "max_retries": int(os.environ.get("AI_MAX_RETRIES", "3")),
             "retry_delay": int(os.environ.get("AI_RETRY_DELAY", "60")),
@@ -89,7 +89,8 @@ class ProviderManager:
 
         # If auto, try to use preferred order based on reliability
         if preferred == "auto":
-            # Try Groq first, then Anthropic, Gemini, Together, then Ollama (local, last fallback)
+            # Try Groq first, then Anthropic, Gemini, Together, then Ollama
+            #  (local, last fallback) 
             provider_configs = [
                 ("anthropic", AnthropicProvider, {"model": self.config["anthropic_model"], "base_url": self.config.get("anthropic_base_url")}),
                 ("groq", GroqProvider, {"model": self.config["groq_model"]}),
@@ -146,7 +147,10 @@ class ProviderManager:
         Returns:
             Generated text content
         """
-        max_retries = min(self.config["max_retries"], 2)  # Max 2 retries total to avoid hanging
+        # At minimum, try every provider once before giving up. The previous cap of 2
+        # meant a 5-provider config (anthropic/groq/gemini/together/ollama) could exit
+        # after only the first two failed, never reaching the local Ollama fallback.
+        max_retries = max(self.config["max_retries"], len(self.providers))
         retry_delay = min(self.config["retry_delay"], 10)   # Max 10s delay
 
         for attempt in range(max_retries):
