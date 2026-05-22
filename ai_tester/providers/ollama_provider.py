@@ -74,13 +74,6 @@ class OllamaProvider(BaseProvider):
         self.console = Console()
 
         # Check if Ollama is available
-        if not self._is_ollama_installed():
-            raise RuntimeError(
-                "Ollama is not installed. Install it with:\n"
-                "  curl -fsSL https://ollama.ai/install.sh | sh\n"
-                "Then run: ollama run llama3.2"
-            )
-
         if not self._is_ollama_running():
             raise RuntimeError(
                 "Ollama is not running. Start it with:\n"
@@ -90,8 +83,8 @@ class OllamaProvider(BaseProvider):
 
         # Check if model is available
         if not self._is_model_available(self.model):
-            self.console.print(f"[yellow]⚠ Model '{self.model}' not found.[/yellow]")
-            self.console.print(f"[dim]Download it with: ollama pull {self.model}[/dim]")
+            self.console.print(f"[yellow]⚠ Model '{self.model}' not found, using qwen3.5 instead.[/yellow]")
+            self.model = "qwen3.5"  # Fallback to an available model
 
     def generate_text(self, messages: List[dict], **kwargs) -> str:
         """
@@ -137,6 +130,8 @@ class OllamaProvider(BaseProvider):
             response.raise_for_status()
             data = response.json()
             return data.get("message", {}).get("content", "")
+        except requests.exceptions.Timeout:
+            raise RuntimeError("Ollama request timed out after 120s")
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Ollama API error: {e}")
 

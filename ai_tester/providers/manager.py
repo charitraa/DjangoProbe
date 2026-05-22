@@ -146,8 +146,8 @@ class ProviderManager:
         Returns:
             Generated text content
         """
-        max_retries = self.config["max_retries"]
-        retry_delay = self.config["retry_delay"]
+        max_retries = min(self.config["max_retries"], 2)  # Max 2 retries total to avoid hanging
+        retry_delay = min(self.config["retry_delay"], 10)   # Max 10s delay
 
         for attempt in range(max_retries):
             # Try current provider
@@ -160,7 +160,7 @@ class ProviderManager:
                 # Update health tracking
                 self.provider_health[self.current_provider_index]["last_used"] = time.time()
 
-                # Generate text
+                # Generate text (with timeout)
                 response = provider.generate_text(messages, **kwargs)
 
                 # Reset failure count on success
@@ -174,28 +174,19 @@ class ProviderManager:
                 self.console.print(f"[yellow]⚠ {provider_name} rate limit hit[/yellow]")
                 self._handle_rate_limit(self.current_provider_index)
 
-                # Try next provider
+                # Try next provider immediately (no wait)
                 if not self._rotate_provider():
-                    if attempt < max_retries - 1:
-                        self.console.print(f"[yellow]Waiting {retry_delay}s before retry...[/yellow]")
-                        self._countdown(retry_delay)
-                        continue
-                    else:
-                        raise RuntimeError(f"All providers exhausted after {max_retries} retries")
+                    # All providers exhausted, don't retry with long waits
+                    raise RuntimeError(f"All providers exhausted - tried: {provider_name}")
 
             except Exception as e:
                 # Handle other errors
                 self.console.print(f"[red]✗ {provider_name} error: {e}[/red]")
                 self.provider_health[self.current_provider_index]["failures"] += 1
 
-                # Rotate to next provider
+                # Rotate to next provider immediately
                 if not self._rotate_provider():
-                    if attempt < max_retries - 1:
-                        self.console.print(f"[yellow]Waiting {retry_delay}s before retry...[/yellow]")
-                        self._countdown(retry_delay)
-                        continue
-                    else:
-                        raise RuntimeError(f"All providers failed: {e}")
+                    raise RuntimeError(f"All providers failed: {e}")
 
     def _rotate_provider(self) -> bool:
         """

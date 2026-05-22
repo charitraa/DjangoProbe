@@ -138,9 +138,8 @@ class TogetherProvider(BaseProvider):
             # Check if API key is present and client is initialized
             if not self.api_key or not hasattr(self, 'client'):
                 return False
-            # Basic configuration check - don't make live API call
-            # Actual errors will be caught when generating text
-            return bool(self.api_key and self.api_key.startswith('tgp_'))
+            # Basic configuration check only - don't waste API quota
+            return bool(self.api_key and len(self.api_key) > 10)
         except Exception:
             return False
 

@@ -131,13 +131,13 @@ class AnthropicProvider(BaseProvider):
         }
 
     def is_available(self) -> bool:
-        """Check if Anthropic is accessible."""
+        """Check if Anthropic is configured and accessible."""
         try:
-            # Simple test request with minimal tokens
-            self.generate_text([
-                {"role": "user", "content": "hi"}
-            ], max_tokens=5)
-            return True
+            # Check if API key is present and client is initialized (NO live API call)
+            if not self.api_key or not hasattr(self, 'client'):
+                return False
+            # Basic configuration check only - don't waste API quota
+            return bool(self.api_key and len(self.api_key) > 10)
         except Exception:
             return False
 

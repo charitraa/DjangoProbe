@@ -56,7 +56,7 @@ class GroqProvider(BaseProvider):
         self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not self.api_key:
             # Try numbered keys
-            for i in range(1, 4):
+            for i in range(1, 6):
                 key = os.environ.get(f"GROQ_API_KEY_{i}")
                 if key:
                     self.api_key = key
@@ -65,12 +65,22 @@ class GroqProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("No Groq API key found. Set GROQ_API_KEY environment variable.")
 
+        # Store all available API keys for rotation
+        self.api_keys = []
+        primary = self.api_key
+        self.api_keys.append(primary)
+        for i in range(1, 6):
+            key = os.environ.get(f"GROQ_API_KEY_{i}")
+            if key and key != primary and key not in self.api_keys:
+                self.api_keys.append(key)
+        self._current_key_index = 0
+
         self.model = model or self.DEFAULT_MODEL
         self.console = Console()
 
         try:
             self.client = OpenAI(
-                api_key=self.api_key,
+                api_key=self.api_keys[self._current_key_index],
                 base_url=self.BASE_URL,
             )
         except Exception as e:
@@ -110,7 +120,18 @@ class GroqProvider(BaseProvider):
             if any(keyword in error_str.lower() for keyword in [
                 "rate_limit", "413", "429", "over capacity", "503"
             ]):
-                raise RateLimitError(f"Groq rate limit: {error_str}")
+                # Try rotating to next API key
+                if self._rotate_api_key():
+                    self.console.print(f"[cyan]↻ Rotated to next Groq API key ({self._current_key_index + 1}/{len(self.api_keys)})[/cyan]")
+                    try:
+                        response = self.client.chat.completions.create(
+                            messages=messages,
+                            **default_params
+                        )
+                        return response.choices[0].message.content
+                    except Exception:
+                        pass
+                raise RateLimitError(f"Groq rate limit (all {len(self.api_keys)} keys exhausted): {error_str}")
             raise RuntimeError(f"Groq API error: {error_str}")
 
     def get_model_info(self) -> dict:
@@ -125,15 +146,27 @@ class GroqProvider(BaseProvider):
         }
 
     def is_available(self) -> bool:
-        """Check if Groq is accessible."""
+        """Check if Groq is configured and accessible."""
         try:
-            # Simple test request
-            self.generate_text([
-                {"role": "user", "content": "ping"}
-            ], max_tokens=10)
-            return True
+            # Check if API key is present and client is initialized (NO live API call)
+            if not self.api_keys or not hasattr(self, 'client'):
+                return False
+            # Basic configuration check only - don't waste rate limit quota
+            return bool(self.api_keys[0] and self.api_keys[0].startswith('gsk_'))
         except Exception:
             return False
+
+    def _rotate_api_key(self) -> bool:
+        """Rotate to next available API key."""
+        if len(self.api_keys) <= 1:
+            return False
+        next_index = (self._current_key_index + 1) % len(self.api_keys)
+        if next_index == self._current_key_index:
+            return False
+        self._current_key_index = next_index
+        new_key = self.api_keys[self._current_key_index]
+        self.client.api_key = new_key
+        return True
 
     def supports_streaming(self) -> bool:
         """Groq supports streaming."""

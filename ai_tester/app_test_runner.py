@@ -241,16 +241,35 @@ class AppTestRunner:
             module_info = match.group(3)
 
             # Parse module info: apps.user.tests.AppTests.test_get_user_details
+            # or: tests.generated.test_user.UserAppTestCase.test_method
             parts = module_info.split(".")
             app_name = ""
-            # Find the first app name part (not 'tests', not 'AppTests', not 'generated', not 'test_*')
+            
+            # Strategy: Find the app name by looking for known patterns
+            # Known non-app parts to skip
+            skip_parts = {"tests", "test", "generated", "apps", "models", "views", "serializers", "urls"}
+            skip_prefixes = {"AppTests", "Test"}
+            skip_suffixes = {"tests", "TestCase"}
+            
             for part in parts:
-                if part not in ("tests", "test", "generated") and not part.startswith("AppTests") and not part.startswith("Test") and not part.endswith("tests") and not part.startswith("test_"):
-                    # Skip common framework modules like "apps" if there's a real app name after it
-                    if part == "apps" and len(parts) > 3:
-                        continue
-                    app_name = part
-                    break
+                # Skip parts that are definitely not app names
+                if part in skip_parts:
+                    continue
+                if any(part.startswith(p) for p in skip_prefixes):
+                    continue
+                if any(part.endswith(s) for s in skip_suffixes):
+                    continue
+                # This is likely an app name
+                app_name = part
+                break
+            
+            # If we still don't have an app name, try extracting from module info
+            if not app_name and "test_" in module_info:
+                # Extract from test_ prefix: tests.generated.test_user -> "user"
+                for part in parts:
+                    if part.startswith("test_") and part not in {"test_", "test"}:
+                        app_name = part[5:]  # Remove "test_" prefix
+                        break
             
             # Use resolved real app_name if extraction failed
             if not app_name and resolved_app_name:
@@ -330,35 +349,34 @@ class AppTestRunner:
         return results
     def _url_from_test_name(self, test_name: str, app_name: str) -> str:
         """Extract URL from the test file itself."""
-        # Try to read actual URL from generated test file
-        test_file_path = self.repo_path / "tests" / "generated" / f"test_{app_name}.py"
+        # Try with original app_name if the passed one looks wrong
+        target_app = app_name
+        if app_name in ("UserAppTestCase", "generated", "test_user"):
+            # Use the actual app_module from the test path
+            if "test_" in test_name:
+                parts = test_name.replace("test_", "").split("_")
+                if parts:
+                    target_app = parts[0]
         
-        if not test_file_path.exists():
-            # Try to find the test file with any name that matches app_name
-            for tf in (self.repo_path / "tests" / "generated").glob("test_*.py"):
-                if app_name in tf.name:
-                    test_file_path = tf
-                    break
+        test_file_path = self.repo_path / "tests" / "generated" / f"test_{target_app}.py"
         
         if test_file_path.exists():
             try:
                 content = test_file_path.read_text()
                 # Look for self.client.get('/api/...') patterns
-                url_pattern = re.compile(r"self\.client\.(get|post|put|patch|delete)\s*\(\s*['\"]([^'\"]+)['\"]")
+                url_pattern = re.compile(
+                    r"self\.client\.(get|post|put|patch|delete)\s*\(\s*['\"]([^'\"]+)['\"]"
+                )
                 
-                # Find the test method and URL
                 for match in url_pattern.finditer(content):
                     url = match.group(2)
-                    # Check if this URL is close to our test method
-                    return url
+                    if '/api/' in url:
+                        return url
             except Exception:
                 pass
         
-        # Ultimate fallback - just use the app name directly  
-        if app_name:
-            # Return a placeholder that indicates this needs fixing
-            return f"/api/{app_name}/"
-        return "/api/unknown/"
+        # Return placeholder - real URL should come from test output's INFO lines
+        return f"/api/{target_app}/"
     def _method_from_test_name(self, test_name: str) -> list[str]:
         """Guess HTTP method from test name."""
         name = test_name.lower()

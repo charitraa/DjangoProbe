@@ -23,8 +23,9 @@ class GeminiProvider(BaseProvider):
     Requires GEMINI_API_KEY environment variable.
     """
 
-    DEFAULT_MODEL = "gemini-2.0-flash-exp"
+    DEFAULT_MODEL = "gemini-1.5-flash"
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+    FALLBACK_MODEL = "gemini-2.0-flash"
 
     # Available models with characteristics
     MODELS = {
@@ -69,14 +70,12 @@ class GeminiProvider(BaseProvider):
 
         try:
             # Use OpenAI-compatible API for Gemini
-            # Model name needs to be prefixed for OpenAI API
-            model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
-
+            # Note: Do NOT prefix with "models/" - that's for the native REST API, not OpenAI-compatible endpoint
             self.client = OpenAI(
                 api_key=self.api_key,
                 base_url=self.BASE_URL + "/openai/",
             )
-            self.model_for_api = model_name
+            self.model_for_api = self.model
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Gemini client: {e}")
 
@@ -115,6 +114,21 @@ class GeminiProvider(BaseProvider):
                 "rate_limit", "quota", "429", "billing", "resource_exhausted"
             ]):
                 raise RateLimitError(f"Gemini rate/quota limit: {error_str}")
+            
+            # Check for model not found errors - try fallback model
+            if any(keyword in error_str.lower() for keyword in ["not found", "not_found", "404", "not supported"]):
+                # Try fallback model with same parameters but different model
+                fallback_params = dict(default_params)
+                fallback_params['model'] = "gemini-1.5-flash"
+                try:
+                    response = self.client.chat.completions.create(
+                        messages=messages,
+                        **fallback_params
+                    )
+                    return response.choices[0].message.content
+                except Exception as fallback_err:
+                    raise RuntimeError(f"Gemini API error (tried {self.model} then gemini-1.5-flash): {fallback_err}")
+            
             raise RuntimeError(f"Gemini API error: {error_str}")
 
     def get_model_info(self) -> dict:
@@ -139,6 +153,12 @@ class GeminiProvider(BaseProvider):
             return bool(self.api_key and self.api_key.startswith('AIza'))
         except Exception:
             return False
+
+    def fallback_model(self) -> str:
+        """Return an alternative model name if the primary one fails."""
+        if "flash-exp" in self.model or "exp" in self.model:
+            return "gemini-1.5-flash"
+        return self.FALLBACK_MODEL
 
     def supports_streaming(self) -> bool:
         """Gemini supports streaming."""
