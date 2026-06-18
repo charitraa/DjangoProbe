@@ -188,6 +188,93 @@ class EnhancedTestGenerator:
         written = self._write_test_file(app_name, content, file_path)
         return written
 
+    def _jwt_auth_guidance(self, structured_analysis: dict) -> str:
+        """Build JWT authentication guidance for the generation prompt.
+
+        Defaults to header-based Bearer-token auth (``Authorization: Bearer
+        <access>``) -- the standard flow for simple DRF CRUD APIs. Cookie-based
+        JWT is only emitted when the analysis explicitly detected it, and the
+        login URL / token path / response shape come from the detected auth
+        structure so nothing is hardcoded.
+        """
+        token_path = "access"
+        login_url = (
+            self.analysis.login_url
+            if self.analysis and self.analysis.login_url
+            else "/api/user/login/"
+        )
+        response_format = "flat"
+        auth_method = "header_jwt"
+        data_key = "data"
+
+        if structured_analysis and "auth_response_structure" in structured_analysis:
+            auth_struct = structured_analysis["auth_response_structure"] or {}
+            if auth_struct.get("detected"):
+                token_path = auth_struct.get("token_path", token_path)
+                login_url = auth_struct.get("login_url", login_url)
+                response_format = auth_struct.get("response_format", response_format)
+                auth_method = auth_struct.get("auth_method", auth_method)
+                data_key = auth_struct.get("data_key", data_key)
+
+        # Build the token-extraction line, honouring the detected response shape.
+        if response_format == "nested":
+            extract = (
+                f"token = data.get('{data_key}', {{}}).get('{token_path}') "
+                f"or data.get('{token_path}')"
+            )
+        else:
+            extract = f"token = data.get('{token_path}')"
+
+        if auth_method == "cookie_jwt":
+            cookie_names = (
+                (structured_analysis or {}).get("auth_response_structure") or {}
+            ).get("cookie_names", [])
+            main_cookie = cookie_names[0] if cookie_names else "access_token"
+            return f"""
+        - THIS PROJECT USES COOKIE-BASED JWT AUTHENTICATION (detected)
+        - DO NOT use client.login() and DO NOT use force_authenticate()
+        - Authenticate by logging in and storing the JWT in the request cookies
+        - Login URL: {login_url}  |  Token path: '{token_path}' (response format: {response_format})
+        - Example authentication helper:
+          ```python
+          def authenticate_jwt(self, email, password):
+              payload = {{'email': email, 'password': password}}
+              response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
+              if response.status_code == 200:
+                  data = response.json()
+                  {extract}
+                  if token:
+                      self.client.cookies['{main_cookie}'] = token
+                  return data
+              return None
+          ```
+        - Call this helper in setUp() before authenticated requests
+        - DO NOT use APIClient -- use Django's test Client
+"""
+
+        # Default: header-based Bearer token auth (simple CRUD APIs).
+        return f"""
+        - THIS PROJECT USES JWT AUTHENTICATION WITH BEARER TOKENS
+        - Authenticate via the Authorization header: f'Bearer <access token>'
+        - DO NOT use client.login(), force_authenticate(), or cookies for auth
+        - Login URL: {login_url}  |  Access token path: '{token_path}' (response format: {response_format})
+        - Example authentication helper:
+          ```python
+          def authenticate_jwt(self, email, password):
+              payload = {{'email': email, 'password': password}}
+              response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
+              if response.status_code == 200:
+                  data = response.json()
+                  {extract}
+                  if token:
+                      self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
+                  return data
+              return None
+          ```
+        - Call this helper in setUp() before authenticated requests
+        - DO NOT use APIClient -- use Django's test Client
+"""
+
     def _generate_tests_with_ai_prompt(
         self,
         app_name: str,
@@ -222,12 +309,10 @@ class EnhancedTestGenerator:
         6. Include edge cases and validation testing
 
         AUTHENTICATION SETUP - CRITICAL:
-        - If the project uses JWT (most DRF projects do):
-          - DO NOT use client.login() - it won't work with JWT
-          - Create a helper method that authenticates and stores the token
-          - Check authentication method: Bearer token OR Cookie-based
-          - For Bearer token: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          - For Cookie-based: self.client.cookies['access_token'] = token
+        - Default to JWT with Bearer tokens (the standard for DRF CRUD APIs):
+          - DO NOT use client.login() or force_authenticate() with JWT - they won't work
+          - Create a helper that logs in, stores the access token, and sends it as a header
+          - Set the header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
           - Example helper method structure:
             ```python
             def authenticate_jwt(self, email, password):
@@ -235,14 +320,12 @@ class EnhancedTestGenerator:
                 response = self.client.post('/api/user/login/', json.dumps(payload), content_type='application/json')
                 if response.status_code == 200:
                     token = response.json().get('access', response.json().get('token'))
-                    # Try both header and cookie methods
                     self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-                    self.client.cookies['access_token'] = token
                     return response.json()
             ```
-        - If the project uses Django session auth (less common):
-          - Use client.login() method
-          - Example: self.client.login(email='test@example.com', password='password123')
+        - Only use cookie-based JWT (self.client.cookies[...]) if the analysis prompt
+          explicitly says the project uses cookie-based authentication.
+        - Only use client.login() if the analysis says the project uses Django session auth.
 
         UUID FIELD HANDLING - CRITICAL:
         - When sending UUID fields in JSON payloads, ALWAYS convert to strings using str()
@@ -281,85 +364,7 @@ class EnhancedTestGenerator:
         """
             # Add specific authentication guidance based on auth type
             if self.analysis.auth_type == "JWT":
-                # Check if we have detected the actual auth response structure
-                token_path = 'access'  # default
-                login_url = '/api/user/login/'  # default
-
-                if structured_analysis and 'auth_response_structure' in structured_analysis:
-                    auth_struct = structured_analysis['auth_response_structure']
-                    if auth_struct and auth_struct.get('detected'):
-                        token_path = auth_struct.get('token_path', 'access')
-                        login_url = auth_struct.get('login_url', '/api/user/login/')
-                        user_prompt += f"""
-        - THIS PROJECT USES JWT AUTHENTICATION (POSSIBLY COOKIE-BASED)
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - CRITICAL: The actual login response structure has been ANALYZED
-        - Login URL: {login_url}
-        - Access Token Path: response.json()['{token_path}']
-        - Helper method should:
-          1. Make a POST request to the login endpoint with credentials
-          2. Extract the token from the response using the DETECTED path
-          3. Set BOTH authentication methods to be safe:
-             - Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
-             - Cookie: self.client.cookies['access_token'] = {{token}}
-        - Example authentication helper (uses DETECTED token path):
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {{'email': email, 'password': password}}
-              response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  token = response.json()['{token_path}']  # Use detected path
-                  # Set both header and cookie for maximum compatibility
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
-                  self.client.cookies['access_token'] = {{token}}
-                  return response.json()
-              return None
-          ```
-        - Call this helper in setUp() or test methods before authenticated requests
-        - IMPORTANT: Use the exact token path '{token_path}', do NOT assume 'access'
-        - IMPORTANT: Set both HTTP_AUTHORIZATION header AND cookie to ensure compatibility
-"""
-                    else:
-                        user_prompt += f"""
-        - THIS PROJECT USES JWT AUTHENTICATION
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - Helper method should:
-          1. Make a POST request to the login endpoint with credentials
-          2. Extract the 'access' token from the response
-          3. Set the Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-        - Example authentication helper:
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {{'email': email, 'password': password}}
-              response = self.client.post('/api/user/login/', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  token = response.json()['access']
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
-          ```
-        - Call this helper in setUp() or test methods before authenticated requests
-"""
-                else:
-                    user_prompt += """
-        - THIS PROJECT USES JWT AUTHENTICATION
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - Helper method should:
-          1. Make a POST request to the login endpoint with credentials
-          2. Extract the 'access' token from the response
-          3. Set the Authorization header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-        - Example authentication helper:
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {'email': email, 'password': password}
-              response = self.client.post('/api/user/login/', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  token = response.json()['access']
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          ```
-        - Call this helper in setUp() or test methods before authenticated requests
-"""
+                user_prompt += self._jwt_auth_guidance(structured_analysis)
             else:
                 user_prompt += """
         - This project uses Django session authentication
@@ -431,80 +436,7 @@ class EnhancedTestGenerator:
 
         # Add specific authentication guidance based on auth type
         if self.analysis and self.analysis.auth_type == "JWT":
-            # Check if we have detected the actual auth response structure
-            token_path = 'access'  # default
-            login_url = '/api/user/login/'  # default
-
-            if structured_analysis and 'auth_response_structure' in structured_analysis:
-                auth_struct = structured_analysis['auth_response_structure']
-                if auth_struct and auth_struct.get('detected'):
-                    token_path = auth_struct.get('token_path', 'access')
-                    login_url = auth_struct.get('login_url', '/api/user/login/')
-                    user_prompt += f"""
-        - THIS PROJECT USES JWT AUTHENTICATION
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - CRITICAL: The actual login response structure has been ANALYZED
-        - Login URL: {login_url}
-        - IMPORTANT: The response is NESTED. Token is at: response.json()['data']['{token_path}']
-        - Example authentication helper (uses NESTED response):
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {{'email': email, 'password': password}}
-              response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  data = response.json()
-                  # Handle nested response: {{"data": {{"access": "..."}}}}
-                  token = data.get('data', {{}}).get('{token_path}') or data.get('{token_path}')
-                  if token:
-                      # Set both header and cookie for compatibility
-                      self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'
-                      self.client.cookies['access_token'] = token
-                  return data
-              return None
-          ```
-        - Call this helper in setUp() or before authenticated requests
-        - DO NOT use force_authenticate() — it doesn't exist on Django's Client
-        - DO NOT use APIClient — use Django's test Client
-"""
-                else:
-                    user_prompt += """
-        - THIS PROJECT USES JWT AUTHENTICATION
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - Helper method should make POST to login endpoint and set Authorization header
-        - Example authentication helper:
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {'email': email, 'password': password}
-              response = self.client.post('/api/user/login/', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  token = response.json()['access']
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          ```
-        - Call this helper in setUp() or before authenticated requests
-        - DO NOT use force_authenticate() — it doesn't exist on Django's Client
-        - DO NOT use APIClient — use Django's test Client
-"""
-            else:
-                user_prompt += """
-        - THIS PROJECT USES JWT AUTHENTICATION
-        - DO NOT use client.login() - it will NOT work
-        - You MUST create an authentication helper method
-        - Helper method should make POST to login endpoint and set Authorization header
-        - Example authentication helper:
-          ```python
-          def authenticate_jwt(self, email, password):
-              payload = {'email': email, 'password': password}
-              response = self.client.post('/api/user/login/', data=json.dumps(payload), content_type='application/json')
-              if response.status_code == 200:
-                  token = response.json()['access']
-                  self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          ```
-        - Call this helper in setUp() or before authenticated requests
-        - DO NOT use force_authenticate() — it doesn't exist on Django's Client
-        - DO NOT use APIClient — use Django's test Client
-"""
+            user_prompt += self._jwt_auth_guidance(structured_analysis)
         else:
             user_prompt += """
         - This project uses Django session authentication
@@ -569,20 +501,19 @@ class EnhancedTestGenerator:
         - CORRECT ORDER: 1) self.user_data = {...}  2) self.user = User.objects.create(...)  3) self.authenticate()
 
         ## CRITICAL AUTHENTICATION FOR THIS PROJECT:
-        - This project uses JWT with COOKIE-BASED authentication
-        - Login response is NESTED: {"data": {"access": "token_value", "user": {...}}}
-        - Access token is at: response.json()['data']['access']
+        - This project uses JWT with Bearer-token authentication
+        - Log in, read the access token from the response, and send it as a header
         - The correct authentication helper pattern:
           ```python
           def authenticate(self):
-              response = self.client.post('/api/user/login/', 
+              response = self.client.post('/api/user/login/',
                   data=json.dumps({'email': 'test@example.com', 'password': 'testpass123'}),
                   content_type='application/json')
               if response.status_code == 200:
-                  token = response.json().get('data', {}).get('access')
+                  data = response.json()
+                  token = data.get('access') or data.get('data', {}).get('access')
                   if token:
                       self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-                      self.client.cookies['access_token'] = token
           ```
         - Call authenticate() in setUp() after creating test data
         - DO NOT use rest_framework.authtoken - this project uses JWT
@@ -816,9 +747,7 @@ class EnhancedTestGenerator:
             # Check for JWT token handling
             if 'HTTP_AUTHORIZATION' not in content and 'Bearer' not in content:
                 console.print(f"    [yellow]⚠ JWT project missing Authorization header handling[/yellow]")
-            # Check for cookie-based JWT support (important for cookie_jwt auth type)
-            if 'cookies' not in content and 'access_token' not in content:
-                console.print(f"    [yellow]⚠ JWT project missing cookie authentication support - recommended for cookie_jwt[/yellow]")
+            # Bearer-token (header) auth is the default; cookie support is optional.
         else:
             # Check for session authentication if not JWT
             if 'HTTP_AUTHORIZATION' not in content and 'Bearer' not in content:
@@ -943,7 +872,7 @@ Test these endpoints:
 REQUIREMENTS:
 - Use absolute imports: from apps.{app_name}.models import ModelName
 - Use get_user_model() for User model
-- Handle JWT authentication: self.client.cookies['access_token'] = token
+- Handle JWT authentication: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
 - Convert UUIDs to strings in URLs
 - Write working, executable Python code
 - CRITICAL: Ensure all parentheses, brackets, and braces are matched
