@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for multi-provider AI system.
+Test script for the AI provider system.
 Run this to verify provider detection and basic functionality.
 """
 import os
@@ -23,7 +23,7 @@ def test_provider_imports():
     console.print("[cyan]Testing provider imports...[/cyan]")
 
     try:
-        from ai_tester.providers import BaseProvider, GroqProvider, OllamaProvider, TogetherProvider, ProviderManager
+        from ai_tester.providers import BaseProvider, NvidiaProvider, ProviderManager
         console.print("[green]✓ All provider imports successful[/green]")
         return True
     except ImportError as e:
@@ -51,105 +51,35 @@ def test_base_provider():
         return False
 
 
-def test_groq_provider():
-    """Test Groq provider initialization."""
-    console.print("[cyan]Testing Groq provider...[/cyan]")
+def test_nvidia_provider():
+    """Test NVIDIA provider initialization."""
+    console.print("[cyan]Testing NVIDIA provider...[/cyan]")
 
     try:
-        from ai_tester.providers import GroqProvider
+        from ai_tester.providers import NvidiaProvider
 
-        # Check if API key is available
-        api_key = os.environ.get("GROQ_API_KEY")
+        api_key = os.environ.get("NVIDIA_API_KEY")
         if not api_key:
-            # Try numbered keys
-            for i in range(1, 4):
-                api_key = os.environ.get(f"GROQ_API_KEY_{i}")
-                if api_key:
-                    break
-
-        if not api_key:
-            console.print("[yellow]⚠ No Groq API key found - skipping test[/yellow]")
+            console.print("[yellow]⚠ No NVIDIA API key found - skipping test[/yellow]")
+            console.print("[dim]  Get a free key at https://build.nvidia.com[/dim]")
             return True  # Not a failure, just not configured
 
         try:
-            provider = GroqProvider(api_key=api_key)
+            provider = NvidiaProvider(api_key=api_key)
             info = provider.get_model_info()
 
-            console.print(f"[green]✓ Groq provider initialized[/green]")
+            console.print("[green]✓ NVIDIA provider initialized[/green]")
             console.print(f"[dim]  Model: {info['current_model']}[/dim]")
-            console.print(f"[dim]  Available: {info['is_available']}[/dim]")
-
-            return True
-        except Exception as e:
-            console.print(f"[yellow]⚠ Groq provider initialization failed: {e}[/yellow]")
-            return True  # Not a failure, might be network issue
-
-    except Exception as e:
-        console.print(f"[red]✗ Groq provider test failed: {e}[/red]")
-        return False
-
-
-def test_ollama_provider():
-    """Test Ollama provider initialization."""
-    console.print("[cyan]Testing Ollama provider...[/cyan]")
-
-    try:
-        from ai_tester.providers import OllamaProvider
-
-        try:
-            provider = OllamaProvider()
-            info = provider.get_model_info()
-
-            console.print(f"[green]✓ Ollama provider initialized[/green]")
-            console.print(f"[dim]  Model: {info['current_model']}[/dim]")
-            console.print(f"[dim]  Available models: {list(info['available_models'].keys())}[/dim]")
             console.print(f"[dim]  Base URL: {info['base_url']}[/dim]")
-
-            return True
-        except RuntimeError as e:
-            if "not installed" in str(e).lower():
-                console.print("[yellow]⚠ Ollama not installed - skipping test[/yellow]")
-                console.print("[dim]  Install with: curl -fsSL https://ollama.ai/install.sh | sh[/dim]")
-            elif "not running" in str(e).lower():
-                console.print("[yellow]⚠ Ollama not running - skipping test[/yellow]")
-                console.print("[dim]  Start with: ollama serve[/dim]")
-            else:
-                console.print(f"[yellow]⚠ Ollama provider initialization failed: {e}[/yellow]")
-            return True  # Not a failure, just not configured
-
-    except Exception as e:
-        console.print(f"[red]✗ Ollama provider test failed: {e}[/red]")
-        return False
-
-
-def test_together_provider():
-    """Test Together AI provider initialization."""
-    console.print("[cyan]Testing Together AI provider...[/cyan]")
-
-    try:
-        from ai_tester.providers import TogetherProvider
-
-        # Check if API key is available
-        api_key = os.environ.get("TOGETHER_API_KEY")
-        if not api_key:
-            console.print("[yellow]⚠ No Together API key found - skipping test[/yellow]")
-            return True  # Not a failure, just not configured
-
-        try:
-            provider = TogetherProvider(api_key=api_key)
-            info = provider.get_model_info()
-
-            console.print(f"[green]✓ Together AI provider initialized[/green]")
-            console.print(f"[dim]  Model: {info['current_model']}[/dim]")
             console.print(f"[dim]  Available: {info['is_available']}[/dim]")
 
             return True
         except Exception as e:
-            console.print(f"[yellow]⚠ Together AI provider initialization failed: {e}[/yellow]")
+            console.print(f"[yellow]⚠ NVIDIA provider initialization failed: {e}[/yellow]")
             return True  # Not a failure, might be network issue
 
     except Exception as e:
-        console.print(f"[red]✗ Together AI provider test failed: {e}[/red]")
+        console.print(f"[red]✗ NVIDIA provider test failed: {e}[/red]")
         return False
 
 
@@ -167,21 +97,14 @@ def test_provider_manager():
                 manager = ProviderManager(tmpdir)
                 status = manager.get_provider_status()
 
-                console.print(f"[green]✓ Provider Manager initialized[/green]")
+                console.print("[green]✓ Provider Manager initialized[/green]")
                 console.print(f"[dim]  Total providers: {status['total_providers']}[/dim]")
                 console.print(f"[dim]  Current provider: {status['current_provider']}[/dim]")
-
-                if status['total_providers'] == 0:
-                    console.print("[yellow]⚠ No providers available - configure at least one[/yellow]")
-                    console.print("[dim]  Options:[/dim]")
-                    console.print("[dim]    - Ollama: Install and run 'ollama serve'[/dim]")
-                    console.print("[dim]    - Groq: Set GROQ_API_KEY in .env[/dim]")
-                    console.print("[dim]    - Together: Set TOGETHER_API_KEY in .env[/dim]")
 
                 return True
             except RuntimeError as e:
                 console.print(f"[yellow]⚠ Provider Manager initialization failed: {e}[/yellow]")
-                console.print("[dim]  This is expected if no providers are configured[/dim]")
+                console.print("[dim]  Expected if NVIDIA_API_KEY is not configured[/dim]")
                 return True  # Not a failure, just not configured
 
     except Exception as e:
@@ -192,7 +115,7 @@ def test_provider_manager():
 def main():
     """Run all tests."""
     console.print(Panel.fit(
-        "[bold cyan]Multi-Provider AI System Tests[/bold cyan]",
+        "[bold cyan]AI Provider System Tests[/bold cyan]",
         border_style="cyan"
     ))
     console.print()
@@ -202,9 +125,7 @@ def main():
     # Run tests
     results.append(("Provider Imports", test_provider_imports()))
     results.append(("Base Provider", test_base_provider()))
-    results.append(("Groq Provider", test_groq_provider()))
-    results.append(("Ollama Provider", test_ollama_provider()))
-    results.append(("Together AI Provider", test_together_provider()))
+    results.append(("NVIDIA Provider", test_nvidia_provider()))
     results.append(("Provider Manager", test_provider_manager()))
 
     # Print summary
@@ -237,9 +158,8 @@ def main():
         console.print("[green]✓ All tests passed![/green]")
         console.print()
         console.print("[dim]Next steps:[/dim]")
-        console.print("[dim]1. Configure at least one AI provider[/dim]")
+        console.print("[dim]1. Set NVIDIA_API_KEY (free key at https://build.nvidia.com)[/dim]")
         console.print("[dim]2. Run DjangoProbe on your project[/dim]")
-        console.print("[dim]3. See docs/MULTI_PROVIDER_SETUP.md for details[/dim]")
         return 0
     else:
         console.print(f"[red]✗ {failed} test(s) failed[/red]")

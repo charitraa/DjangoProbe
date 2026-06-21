@@ -2,122 +2,114 @@
 
 Get started with DjangoProbe's multi-provider AI system in minutes!
 
-## Fastest Setup (Ollama - Completely Free)
+At least one provider must be configured. **NVIDIA NIM is always tried first**;
+the other providers are fallbacks and only run when their API key is set.
+
+## Fastest Setup (NVIDIA NIM - Free Tier, Recommended)
 
 ```bash
-# Step 1: Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
+# Step 1: Get a free API key (starts with nvapi-)
+# Visit: https://build.nvidia.com
 
-# Step 2: Start Ollama and download a model
-ollama serve &
-ollama pull llama3.2
-
-# Step 3: Run DjangoProbe
-djangoprobe ~/path/to/your/django/project
-```
-
-That's it! No API keys needed.
-
-## Alternative: Groq API (Fast Remote)
-
-```bash
-# Step 1: Get API key
-# Visit: https://console.groq.com/keys
-
-# Step 2: Add to .env
-echo "GROQ_API_KEY=gsk_your_key_here" > .env
-echo "GROQ_MODEL=llama-3.1-8b-instant" >> .env
-
-# Step 3: Run DjangoProbe
-djangoprobe ~/path/to/your/django/project
-```
-
-## Best Setup: Multiple Providers
-
-```bash
-# Step 1: Install Ollama (optional but recommended)
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama serve &
-ollama pull llama3.2
-
-# Step 2: Add API keys to .env
+# Step 2: Add to .env in your working directory
 cat > .env << EOF
-GROQ_API_KEY=gsk_your_groq_key
-GROQ_MODEL=llama-3.1-8b-instant
-TOGETHER_API_KEY=your_together_key
+AI_PREFERRED_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-your_key_here
+NVIDIA_MODEL=qwen/qwen3.5-122b-a10b
 EOF
 
 # Step 3: Run DjangoProbe
 djangoprobe ~/path/to/your/django/project
 ```
 
+> Tip: copy the exact model id from the model's page on build.nvidia.com
+> (the "Get API Key" code snippet shows `model="..."`). If the id is wrong the
+> API returns a 404. `qwen/qwen3.5-122b-a10b` is a good coding/reasoning choice;
+> `qwen/qwen3-next-80b-a3b-instruct` is a solid alternate.
+
+## Alternative: Groq API (Fast Remote)
+
+```bash
+# Step 1: Get an API key at https://console.groq.com/keys
+
+# Step 2: Add to .env
+echo "GROQ_API_KEY=gsk_your_key_here" >> .env
+echo "GROQ_MODEL=llama-3.3-70b-versatile" >> .env
+
+# Step 3: Run DjangoProbe
+djangoprobe ~/path/to/your/django/project
+```
+
+## Best Setup: Multiple Providers (Maximum Reliability)
+
+```bash
+cat > .env << EOF
+AI_PREFERRED_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-your_key_here
+NVIDIA_MODEL=qwen/qwen3.5-122b-a10b
+GROQ_API_KEY=gsk_your_groq_key
+GROQ_MODEL=llama-3.3-70b-versatile
+GEMINI_API_KEY=your_gemini_key
+GEMINI_MODEL=gemini-2.0-flash
+EOF
+
+djangoprobe ~/path/to/your/django/project
+```
+
 ## How It Works
 
 DjangoProbe automatically:
-1. Detects available providers (Ollama, Groq, Together)
-2. Uses the best available provider
-3. Automatically falls back to other providers if one fails
+1. Initializes only the providers whose API key is configured
+2. Always uses NVIDIA first, then the rest (Anthropic → Groq → Gemini → Together)
+3. Rotates to the next available provider on any error or rate limit
 4. Handles rate limits and errors gracefully
 
 ## Common Commands
 
 ```bash
-# Check Ollama status
-ollama list
+# Run against a local project
+djangoprobe ~/path/to/your/django/project
 
-# Download a different Ollama model
-ollama pull mistral
+# Run against a git URL
+djangoprobe https://github.com/user/repo
 
-# Test Ollama
-ollama run llama3.2 "Hello, how are you?"
+# Check the provider system
+python tests/test_providers.py
 
-# Check DjangoProbe status
+# Show help
 djangoprobe --help
 ```
 
 ## Troubleshooting
 
-**Ollama not working?**
+**No providers available?**
 ```bash
-# Make sure Ollama is running
-pgrep ollama  # Should show process ID
-
-# Start it if not running
-ollama serve
+# Make sure at least one key is set
+env | grep -E "NVIDIA|GROQ|GEMINI|ANTHROPIC|TOGETHER"
 ```
 
-**Groq rate limits?**
+**NVIDIA returns a 404 on the model?**
 ```bash
-# Add multiple API keys
+# The model id is wrong. Copy the exact id from the model page on
+# build.nvidia.com (the code snippet shows model="...").
+```
+
+**Provider rate limited?**
+```bash
+# Configure additional providers so the manager can fall back.
+# Groq also supports numbered keys for rotation:
 echo "GROQ_API_KEY_1=gsk_key1" >> .env
 echo "GROQ_API_KEY_2=gsk_key2" >> .env
-echo "GROQ_API_KEY_3=gsk_key3" >> .env
-```
-
-**Provider not detected?**
-```bash
-# Check environment variables
-env | grep -E "GROQ|TOGETHER|OLLAMA"
-
-# Test Ollama connection
-curl http://localhost:11434/api/tags
 ```
 
 ## Next Steps
 
 - Read the full setup guide: [MULTI_PROVIDER_SETUP.md](MULTI_PROVIDER_SETUP.md)
 - Check the main README: [README.md](../README.md)
-- Configure custom models and providers
 
 ## Tips
 
-1. **Start with Ollama** - It's free and has no rate limits
-2. **Add Groq as backup** - Fast when Ollama is slow
-3. **Use smaller models** - Faster and higher rate limits
-4. **Configure multiple providers** - Maximum reliability
-
-## Support
-
-- Documentation: [MULTI_PROVIDER_SETUP.md](MULTI_PROVIDER_SETUP.md)
-- Issues: GitHub Issues
-- Discussions: GitHub Discussions
+1. **Start with NVIDIA NIM** - free tier, OpenAI-compatible, strong models
+2. **Add Groq/Gemini as backups** - automatic fallback on rate limits
+3. **Pin the exact NVIDIA model id** from the model page to avoid 404s
+4. **Configure multiple providers** - maximum reliability

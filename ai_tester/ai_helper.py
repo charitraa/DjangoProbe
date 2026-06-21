@@ -16,10 +16,8 @@ class AIHelper:
     """
     AI API client with multi-provider support.
 
-    Supports multiple AI providers with automatic fallback:
-      - Groq: Fast inference, free tier
-      - Ollama: Completely free, local models
-      - Together AI: Good free tier
+    NVIDIA NIM is always first priority; groq/gemini/anthropic/together are
+    used as fallbacks when their API key is configured in the environment.
 
     Usage:
         helper = AIHelper(repo_path)

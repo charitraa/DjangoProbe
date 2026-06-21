@@ -6,7 +6,7 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 
 - **Automatic Endpoint Discovery**: Scans Django projects to find all API endpoints
 - **AI-Powered Deep App Analysis**: Uses AI APIs to analyze models, serializers, and views
-- **Multi-Provider Support**: Groq, Ollama (local), and Together AI with automatic fallback
+- **Multi-Provider Support**: NVIDIA NIM (first priority), plus Groq, Gemini, Anthropic, and Together AI with automatic fallback
 - **Intelligent Test Generation**: Generates comprehensive test cases based on code analysis
 - **Per-App Testing**: Generates and runs tests for each Django app independently
 - **Detailed Reporting**: Provides terminal reports with Rich formatting and JSON exports
@@ -33,38 +33,34 @@ pip install -e .
 
 ### Configuration
 
-Create a `.env` file in your project root. DjangoProbe supports multiple AI providers:
+Create a `.env` file in your working directory. At least one provider must be
+configured. **NVIDIA NIM is always tried first**; the others are used as
+fallbacks and only run if their API key is present.
 
-**Option 1: Ollama (Completely Free, Local)**
-```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Start Ollama and download a model
-ollama serve &
-ollama pull llama3.2
-
-# No .env configuration needed - Ollama is auto-detected
+**Recommended: NVIDIA NIM (free tier, OpenAI-compatible)**
+```env
+AI_PREFERRED_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-your_key_here          # free key at https://build.nvidia.com
+NVIDIA_MODEL=qwen/qwen3.5-122b-a10b         # copy the exact id from the model page
+# NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1   # optional override (any OpenAI-compatible endpoint)
 ```
 
-**Option 2: Groq (Fast Remote API)**
+**Other providers (optional fallbacks — only run when their key is set)**
 ```env
 GROQ_API_KEY=gsk_your_key_here
-GROQ_MODEL=llama-3.1-8b-instant  # Recommended for better rate limits
+GROQ_MODEL=llama-3.3-70b-versatile
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.0-flash
+ANTHROPIC_API_KEY=your_key_here
+ANTHROPIC_MODEL=claude-3.5-sonnet
+TOGETHER_API_KEY=your_key_here
+TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
 ```
 
-**Option 3: Together AI (Good Free Tier)**
-```env
-TOGETHER_API_KEY=your_key_here
-TOGETHER_MODEL=meta-llama/Llama-3.1-8b-chat-Instruct-Turbo
-```
-
-**Multiple Providers (Best Reliability)**
-```env
-GROQ_API_KEY=gsk_your_key_here
-TOGETHER_API_KEY=your_key_here
-# Ollama will be auto-detected if running
-```
+Provider priority: **NVIDIA → Anthropic → Groq → Gemini → Together**. NVIDIA is
+always first; `AI_PREFERRED_PROVIDER` can reorder the others but never displaces
+NVIDIA. On any error or rate limit, the manager rotates to the next available
+provider.
 
 For detailed setup instructions, see [MULTI_PROVIDER_SETUP.md](docs/MULTI_PROVIDER_SETUP.md).
 
@@ -173,8 +169,10 @@ DjangoProbe/
 │   ├── providers/                 # Multi-provider system
 │   │   ├── __init__.py
 │   │   ├── base.py               # Provider interface
+│   │   ├── nvidia_provider.py    # NVIDIA NIM implementation (first priority)
 │   │   ├── groq_provider.py      # Groq implementation
-│   │   ├── ollama_provider.py    # Ollama implementation
+│   │   ├── gemini_provider.py    # Gemini implementation
+│   │   ├── anthropic_provider.py # Anthropic implementation
 │   │   ├── together_provider.py  # Together AI implementation
 │   │   └── manager.py            # Provider manager with fallback
 │   ├── app_test_runner.py         # Test execution
@@ -358,8 +356,10 @@ DjangoProbe - Intelligent endpoint testing for Django projects
 - Django 3.0+
 - Django REST Framework 3.0+
 - AI Provider (one or more):
-  - **Ollama** (free, local) - Install from [ollama.ai](https://ollama.ai)
+  - **NVIDIA NIM** (free tier, recommended) - Get a key at [build.nvidia.com](https://build.nvidia.com)
   - **Groq API key** (free tier) - Get from [console.groq.com](https://console.groq.com)
+  - **Gemini API key** (free tier) - Get from [aistudio.google.com](https://aistudio.google.com)
+  - **Anthropic API key** - Get from [console.anthropic.com](https://console.anthropic.com)
   - **Together AI key** (free tier) - Get from [api.together.xyz](https://api.together.xyz)
 
 ## Configuration Options
@@ -367,14 +367,17 @@ DjangoProbe - Intelligent endpoint testing for Django projects
 ### Environment Variables
 
 **AI Provider Selection:**
-- `AI_PREFERRED_PROVIDER`: auto (default), groq, ollama, together
+- `AI_PREFERRED_PROVIDER`: auto (default), nvidia, anthropic, groq, gemini, together
+  (NVIDIA is always first priority regardless of this setting; it reorders the others)
 
 **Provider Configuration:**
-- `GROQ_API_KEY`: Your Groq API key
-- `GROQ_MODEL`: Groq model (default: llama-3.1-8b-instant)
-- `TOGETHER_API_KEY`: Your Together AI key
-- `TOGETHER_MODEL`: Together model (default: meta-llama/Llama-3.1-8b-chat-Instruct-Turbo)
-- `OLLAMA_MODEL`: Ollama model (default: llama3.2)
+- `NVIDIA_API_KEY`: Your NVIDIA NIM key (starts with `nvapi-`)
+- `NVIDIA_MODEL`: NVIDIA model (default: `qwen/qwen3.5-122b-a10b`)
+- `NVIDIA_BASE_URL`: Optional endpoint override (default: `https://integrate.api.nvidia.com/v1`)
+- `GROQ_API_KEY` / `GROQ_MODEL`: Groq key and model (default: `llama-3.3-70b-versatile`)
+- `GEMINI_API_KEY` / `GEMINI_MODEL`: Gemini key and model (default: `gemini-2.0-flash`)
+- `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL`: Anthropic config
+- `TOGETHER_API_KEY` / `TOGETHER_MODEL`: Together key and model
 
 **Retry Configuration:**
 - `AI_MAX_RETRIES`: Maximum retry attempts (default: 3)
@@ -394,13 +397,10 @@ Options:
 ### Common Issues
 
 **Issue**: "No AI providers available"
-- **Solution**: Configure at least one provider (Ollama, Groq, or Together AI)
+- **Solution**: Configure at least one provider key in `.env` (NVIDIA, Groq, Gemini, Anthropic, or Together)
 
 **Issue**: "Rate limit exceeded"
-- **Solution**: Configure multiple providers for automatic fallback, or use Ollama for unlimited local usage
-
-**Issue**: "Ollama not found"
-- **Solution**: Install Ollama: `curl -fsSL https://ollama.ai/install.sh | sh`
+- **Solution**: Configure multiple providers for automatic fallback. NVIDIA NIM's free tier is the recommended primary.
 
 **Issue**: Tests fail to run
 - **Solution**: Ensure project has valid `manage.py` and all dependencies are installed
@@ -442,8 +442,8 @@ MIT License - see LICENSE file for details
 
 ## Acknowledgments
 
+- **NVIDIA NIM**: For the free, OpenAI-compatible inference endpoint
 - **Groq API**: For providing fast, free AI API access
-- **Ollama**: For completely free local AI model inference
 - **Together AI**: For providing excellent free tier AI services
 - **Django REST Framework**: For the excellent API framework
 - **Rich**: For beautiful terminal output

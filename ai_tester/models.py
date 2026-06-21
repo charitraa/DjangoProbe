@@ -45,6 +45,10 @@ class ProjectAnalysis:
     auth_module: str
     auth_app_name: str
 
+    # USERNAME_FIELD of the User model / login credential key.
+    # "username" for the stock Django user, "email" for custom email-based users.
+    username_field: str = "email"
+
     # User model fields safe to use in create_user()
     # excludes ManyToMany fields automatically
     safe_user_fields: list[str] = field(default_factory=list)

@@ -32,7 +32,8 @@ class ProjectAnalyzer:
         auth_type = self._detect_auth_type()
         auth_dir = self._find_auth_app()
         auth_module = self._get_auth_module(auth_dir)
-        auth_app_name = auth_dir.name if auth_dir else "user"
+        auth_app_name = auth_dir.name if auth_dir else "auth"
+        username_field = self._detect_username_field(auth_dir)
         login_url = self._find_login_url(auth_dir)
         safe_fields = self._get_safe_user_fields(auth_dir)
         fk_fields = self._get_user_fk_fields(auth_dir)
@@ -42,6 +43,7 @@ class ProjectAnalyzer:
         console.print(f"  [dim]Auth type:[/dim]    [cyan]{auth_type}[/cyan]")
         console.print(f"  [dim]Auth app:[/dim]     [cyan]{auth_module}[/cyan]")
         console.print(f"  [dim]Login URL:[/dim]    [cyan]{login_url}[/cyan]")
+        console.print(f"  [dim]Login field:[/dim]  [cyan]{username_field}[/cyan]")
         console.print(f"  [dim]Safe fields:[/dim]  [cyan]{', '.join(safe_fields)}[/cyan]")
 
         if fk_fields:
@@ -59,6 +61,7 @@ class ProjectAnalyzer:
             login_url=login_url,
             auth_module=auth_module,
             auth_app_name=auth_app_name,
+            username_field=username_field,
             safe_user_fields=safe_fields,
             roles=roles,
             user_fk_fields=fk_fields,
@@ -104,6 +107,28 @@ class ProjectAnalyzer:
         return "JWT"  # default assumption for DRF projects
 
     #  AUTH APP FINDER
+    def _detect_username_field(self, auth_dir: Path | None) -> str:
+        """
+        Determine the User model's login credential field (USERNAME_FIELD).
+
+        - No custom user app (stock django.contrib.auth.User) → "username".
+        - Custom user app → read USERNAME_FIELD from its models.py; default to
+          "email" (the common custom email-based user) when not declared.
+        """
+        if not auth_dir:
+            return "username"
+
+        models_file = auth_dir / "models.py"
+        if models_file.exists():
+            content = models_file.read_text(errors="ignore")
+            match = re.search(
+                r'USERNAME_FIELD\s*=\s*["\']([^"\']+)["\']', content
+            )
+            if match:
+                return match.group(1)
+
+        return "email"
+
     def _find_auth_app(self) -> Path | None:
         """Find auth app via AUTH_USER_MODEL in settings.py"""
         settings = self._find_settings()
@@ -126,9 +151,13 @@ class ProjectAnalyzer:
         return self._resolve_app_dir(app_module)
 
     def _get_auth_module(self, auth_dir: Path | None) -> str:
-        """Get dotted module path for auth app."""
+        """Get dotted module path for auth app.
+
+        With no custom AUTH_USER_MODEL the project uses Django's stock User,
+        which lives at django.contrib.auth (not a project app).
+        """
         if not auth_dir:
-            return "apps.user"
+            return "django.contrib.auth"
 
         # Try to find it from settings INSTALLED_APPS
         settings = self._find_settings()
@@ -154,26 +183,53 @@ class ProjectAnalyzer:
     #  LOGIN URL FINDER
     def _find_login_url(self, auth_dir: Path | None) -> str:
         """Find login URL from auth app urls.py + root urls.py prefix."""
-        if not auth_dir:
-            return "/api/user/login/"
+        if auth_dir:
+            urls_file = auth_dir / "urls.py"
+            if urls_file.exists():
+                content = urls_file.read_text(errors="ignore")
+                match = re.search(
+                    r'path\(["\']([^"\']*login[^"\']*)["\']',
+                    content, re.IGNORECASE
+                )
+                if match:
+                    local_path = match.group(1)
+                    prefix     = self._find_url_prefix(auth_dir.name)
+                    return f"/{prefix}{local_path}".replace("//", "/")
 
-        urls_file = auth_dir / "urls.py"
-        if not urls_file.exists():
-            return "/api/user/login/"
+        # Fallback: scan the whole project for a login/token endpoint. This
+        # covers stock-User projects whose login lives in any app's urls.py
+        # (e.g. simplejwt's TokenObtainPairView) rather than a dedicated auth app.
+        scanned = self._scan_login_url()
+        return scanned or "/api/user/login/"
 
-        content = urls_file.read_text(errors="ignore")
-        match   = re.search(
-            r'path\(["\']([^"\']*login[^"\']*)["\']',
-            content, re.IGNORECASE
-        )
+    def _scan_login_url(self) -> str | None:
+        """Scan every project urls.py for a login endpoint (incl. simplejwt)."""
+        skip = ("/.venv/", "/venv/", "/env/", "/site-packages/", "/.probe_venv/")
+        for urls_file in self.repo_path.rglob("urls.py"):
+            if any(s in str(urls_file) for s in skip):
+                continue
+            try:
+                content = urls_file.read_text(errors="ignore")
+            except Exception:
+                continue
 
-        if match:
-            local_path = match.group(1)
-            prefix     = self._find_url_prefix(auth_dir.name)
-            full       = f"/{prefix}{local_path}".replace("//", "/")
-            return full
-
-        return "/api/user/login/"
+            match = re.search(
+                r'path\(\s*["\']([^"\']*login[^"\']*)["\']',
+                content, re.IGNORECASE
+            )
+            if not match and "TokenObtainPairView" in content:
+                match = re.search(
+                    r'path\(\s*["\']([^"\']*)["\'][^)]*TokenObtainPairView',
+                    content,
+                )
+            if match:
+                local_path = match.group(1)
+                prefix = self._find_url_prefix(urls_file.parent.name)
+                full = re.sub(r"/+", "/", f"/{prefix}{local_path}")
+                if not full.endswith("/"):
+                    full += "/"
+                return full
+        return None
 
     def _find_url_prefix(self, app_name: str) -> str:
         """Find URL prefix for app from root urls.py."""
@@ -215,7 +271,9 @@ class ProjectAnalyzer:
         m2m_fields   = ["pages"]                      ← set after creation
         """
         if not auth_dir:
-            return ["email", "full_name"], [], []
+            # Stock django.contrib.auth.User: username is required by
+            # create_user(); email is optional but safe to pass.
+            return ["username", "email"], [], []
 
         models_file = auth_dir / "models.py"
         if not models_file.exists():

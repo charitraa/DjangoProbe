@@ -1135,11 +1135,19 @@ Generate complete test cases with proper setup, authentication, and assertions."
             auth_info["evidence"].extend(views_auth_info["evidence"])
             auth_info["token_names"].extend(views_auth_info["token_names"])
 
-        # Analyze urls.py for login endpoint
+        # Analyze urls.py for login endpoint and SimpleJWT usage
         if "urls" in source_code:
             login_info = self._detect_login_endpoint(source_code["urls"])
             if login_info["login_url"]:
                 auth_info["login_url"] = login_info["login_url"]
+
+            urls_auth_info = self._analyze_urls_for_auth(source_code["urls"])
+            auth_info["evidence"].extend(urls_auth_info["evidence"])
+            auth_info["token_names"].extend(urls_auth_info["token_names"])
+
+        # Fall back to project settings for the default auth classes (DRF)
+        settings_auth_info = self._analyze_settings_for_auth()
+        auth_info["evidence"].extend(settings_auth_info["evidence"])
 
         # Determine final authentication method
         if auth_info["evidence"]:
@@ -1218,6 +1226,45 @@ Generate complete test cases with proper setup, authentication, and assertions."
         cookie_names = re.findall(r'set_cookie\(\s*key=["\']([^"\']+)["\']', views_content)
         if cookie_names:
             info["token_names"].extend(cookie_names)
+
+        return info
+
+    def _analyze_urls_for_auth(self, urls_content: str) -> Dict[str, Any]:
+        """Analyze urls.py for authentication patterns (e.g. SimpleJWT views)."""
+        info = {"evidence": [], "token_names": []}
+
+        # rest_framework_simplejwt token views are a strong header-JWT signal.
+        if "rest_framework_simplejwt" in urls_content or "TokenObtainPair" in urls_content:
+            info["evidence"].append("jwt_authentication")
+            info["token_names"].extend(["access", "refresh"])
+
+        return info
+
+    def _analyze_settings_for_auth(self) -> Dict[str, Any]:
+        """Analyze the project's settings for the default DRF auth classes.
+
+        Used as a fallback when the app itself has no explicit auth code: a
+        project-wide ``DEFAULT_AUTHENTICATION_CLASSES`` still applies to every
+        view via DRF defaults.
+        """
+        info = {"evidence": []}
+
+        for settings_file in self.repo_path.rglob("settings.py"):
+            # Skip anything living inside a virtualenv / site-packages.
+            if any(part in {"site-packages", ".venv", "env", ".probe_venv"}
+                   for part in settings_file.parts):
+                continue
+            try:
+                content = settings_file.read_text()
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            if "JWTAuthentication" in content:
+                info["evidence"].append("jwt_authentication")
+            if "SessionAuthentication" in content:
+                info["evidence"].append("session_authentication")
+            if "TokenAuthentication" in content:
+                info["evidence"].append("jwt_authentication")
 
         return info
 

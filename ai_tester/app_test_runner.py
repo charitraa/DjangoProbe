@@ -237,6 +237,9 @@ class AppTestRunner:
         # Find all ERROR and FAIL test entries
         for match in test_pattern.finditer(output):
             status_type = match.group(1).upper()  # ERROR or FAIL
+            # Django prints "FAIL:" but the report/summary count "FAILED".
+            if status_type == "FAIL":
+                status_type = "FAILED"
             test_name   = match.group(2)
             module_info = match.group(3)
 

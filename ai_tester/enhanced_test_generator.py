@@ -1,13 +1,18 @@
 import re
 import time
 from pathlib import Path
-from prompt_toolkit import token
 from rich.console import Console
 from ai_tester.models import EndpointInfo
 from ai_tester.ai_helper import AIHelper
 from ai_tester.app_analyzer import AppAnalyzer
 
 console = Console()
+
+# A password strong enough to pass Django's default AUTH_PASSWORD_VALIDATORS
+# (min length, not all-numeric, not a common password, not similar to the
+# username/email). Registration endpoints run these validators, so weak
+# defaults like "password123" make create/register success tests return 400.
+STRONG_TEST_PASSWORD = "Str0ng!Pass99"
 
 
 class EnhancedTestGenerator:
@@ -206,12 +211,17 @@ class EnhancedTestGenerator:
         response_format = "flat"
         auth_method = "header_jwt"
         data_key = "data"
+        # Login credential field: "username" for stock User, "email" for custom users.
+        cred = self.analysis.username_field if self.analysis else "email"
 
         if structured_analysis and "auth_response_structure" in structured_analysis:
             auth_struct = structured_analysis["auth_response_structure"] or {}
             if auth_struct.get("detected"):
                 token_path = auth_struct.get("token_path", token_path)
-                login_url = auth_struct.get("login_url", login_url)
+                # Prefer ProjectAnalyzer's login_url (resolves the URL include
+                # prefix); only fall back to the app-level one if it's absent.
+                if not (self.analysis and self.analysis.login_url):
+                    login_url = auth_struct.get("login_url", login_url)
                 response_format = auth_struct.get("response_format", response_format)
                 auth_method = auth_struct.get("auth_method", auth_method)
                 data_key = auth_struct.get("data_key", data_key)
@@ -237,8 +247,8 @@ class EnhancedTestGenerator:
         - Login URL: {login_url}  |  Token path: '{token_path}' (response format: {response_format})
         - Example authentication helper:
           ```python
-          def authenticate_jwt(self, email, password):
-              payload = {{'email': email, 'password': password}}
+          def authenticate_jwt(self, {cred}, password):
+              payload = {{'{cred}': {cred}, 'password': password}}
               response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
               if response.status_code == 200:
                   data = response.json()
@@ -260,8 +270,8 @@ class EnhancedTestGenerator:
         - Login URL: {login_url}  |  Access token path: '{token_path}' (response format: {response_format})
         - Example authentication helper:
           ```python
-          def authenticate_jwt(self, email, password):
-              payload = {{'email': email, 'password': password}}
+          def authenticate_jwt(self, {cred}, password):
+              payload = {{'{cred}': {cred}, 'password': password}}
               response = self.client.post('{login_url}', data=json.dumps(payload), content_type='application/json')
               if response.status_code == 200:
                   data = response.json()
@@ -273,6 +283,177 @@ class EnhancedTestGenerator:
           ```
         - Call this helper in setUp() before authenticated requests
         - DO NOT use APIClient -- use Django's test Client
+"""
+
+    def _user_model_guidance(self) -> str:
+        """Build User-model guidance from the detected analysis.
+
+        Adapts to the project's real User model: the login credential field
+        (username vs email), the fields safe to pass to create_user(), and the
+        correct import. Replaces the old hardcoded email/full_name assumptions
+        that broke stock django.contrib.auth.User projects.
+        """
+        a = self.analysis
+        module = a.auth_module if a and a.auth_module else None
+        cred = a.username_field if a else "email"
+        fields = list(a.safe_user_fields) if a and a.safe_user_fields else ["email", "full_name"]
+
+        example_vals = {
+            "username": "'testuser'",
+            "email": "'test@example.com'",
+            "full_name": "'Test User'",
+            "name": "'Test User'",
+            "first_name": "'Test'",
+            "last_name": "'User'",
+            "phone": "'1234567890'",
+        }
+        kwargs = [f"{f}={example_vals.get(f, chr(39) + 'value' + chr(39))}" for f in fields if f != "password"]
+        kwargs.append(f"password='{STRONG_TEST_PASSWORD}'")
+        create_call = "User.objects.create_user(" + ", ".join(kwargs) + ")"
+
+        module_line = (
+            f"        - The custom User model lives at: {module}\n"
+            if module and module not in ("apps.user", "apps.user.models", "django.contrib.auth")
+            else ""
+        )
+
+        return f"""        ## CRITICAL USER MODEL INFORMATION:
+        - Import the User model with: from django.contrib.auth import get_user_model; User = get_user_model()
+        - The login credential field is '{cred}' -- use it for both login and create_user()
+        - Create test users like: {create_call}
+{module_line}        - Only pass these fields to create_user(): {', '.join(fields)} (plus password)
+        - Do NOT invent User fields that are not listed above
+
+        ## CRITICAL PASSWORD RULES (registration endpoints validate passwords):
+        - For any user that must successfully register/log in, use this exact password: '{STRONG_TEST_PASSWORD}'
+        - Use the SAME password in setUp create_user(), in login, and in register-success tests
+        - This password passes Django's validators (>=8 chars, not all-numeric, not a
+          common password, not similar to the username/email)
+        - NEVER use weak passwords like 'password123' for success tests -- the register
+          endpoint runs validate_password and will return 400, failing the test
+        - Only use a deliberately weak password (e.g. '123') in tests that EXPECT a 400"""
+
+    def _is_pagination_enabled(self) -> bool:
+        """Detect whether DRF list endpoints are paginated for this project.
+
+        A list endpoint only returns a {'count', 'results': [...]} envelope when
+        a default pagination class (or global PAGE_SIZE) is configured. Without
+        it, DRF returns a plain JSON array — assuming 'results' then raises
+        TypeError/KeyError in generated tests.
+        """
+        for settings_file in self.repo_path.rglob("settings.py"):
+            if any(part in {"site-packages", ".venv", "env", ".probe_venv"}
+                   for part in settings_file.parts):
+                continue
+            try:
+                content = settings_file.read_text(errors="ignore")
+            except OSError:
+                continue
+            if "DEFAULT_PAGINATION_CLASS" in content or "PAGE_SIZE" in content:
+                return True
+        return False
+
+    def _ownership_scoping_guidance(self, app_name: str) -> str:
+        """Prompt guidance for viewsets that scope their queryset to request.user.
+
+        When ``get_queryset`` filters by the authenticated user (a very common
+        ownership pattern), another user's object is simply absent from the
+        queryset, so DRF returns 404 (not 403) on detail access, and list
+        endpoints only ever return the current user's objects.
+        """
+        app = next((a for a in self.ai_helper.installed_apps
+                    if a.get("app_name") == app_name), None)
+        views_path = None
+        if app and app.get("app_dir"):
+            candidate = Path(app["app_dir"]) / "views.py"
+            if candidate.exists():
+                views_path = candidate
+        if views_path is None:
+            candidate = self.repo_path / app_name / "views.py"
+            views_path = candidate if candidate.exists() else None
+        if views_path is None:
+            return ""
+        try:
+            views_src = views_path.read_text(errors="ignore")
+        except OSError:
+            return ""
+
+        # Detect: get_queryset that filters on the request user.
+        if not re.search(r"def get_queryset[\s\S]*?request\.user", views_src):
+            return ""
+
+        return """
+        ## OBJECT OWNERSHIP SCOPING - CRITICAL:
+        - A viewset here filters its queryset by the authenticated user (owner scoping).
+        - Therefore another user's object is NOT in the queryset: detail/PUT/PATCH/DELETE
+          on an object the current user does NOT own returns 404, NOT 403.
+        - For "not owner"/"forbidden" style tests, assert status_code == 404 (not 403).
+        - List endpoints only ever return the CURRENT user's objects — assert counts accordingly.
+"""
+
+    def _list_response_guidance(self) -> str:
+        """Prompt guidance on the shape of list (GET collection) responses."""
+        if self._is_pagination_enabled():
+            return """
+        ## LIST RESPONSE SHAPE - CRITICAL:
+        - This project HAS DRF pagination enabled, so list (GET collection)
+          endpoints return a paginated envelope: {'count': N, 'next': ..., 'previous': ..., 'results': [...]}
+        - Access items via response.json()['results'], and assert with assertIn('results', response.json())
+"""
+        return """
+        ## LIST RESPONSE SHAPE - CRITICAL:
+        - This project has NO DRF pagination configured, so list (GET collection)
+          endpoints return a PLAIN JSON ARRAY, e.g. [{'id': 1, ...}, ...]
+        - response.json() is a list, NOT a dict. Do NOT access response.json()['results']
+          and do NOT assert assertIn('results', response.json()) — both will fail.
+        - To count items use len(response.json()); to inspect the first item use response.json()[0]
+"""
+
+    def _test_data_guidance(self, structured_analysis: dict) -> str:
+        """Guidance on seeding test data and writing correct failure cases.
+
+        Two recurring mistakes in generated tests:
+        1. A list-success test asserts a non-empty result without creating any
+           object first — but querysets are commonly owner-scoped, so the list
+           starts empty and the assertion fails.
+        2. A create/update "failure" test omits an OPTIONAL field expecting a
+           400 — but only REQUIRED fields trigger validation errors.
+        """
+        # Pull client-providable required fields from the analyzed models: a
+        # field a client must send is required, has no default, and isn't an
+        # auto/timestamp or server-set relation (owner/FK, set by the view).
+        required = []
+        _auto_types = {"DateTimeField", "AutoField", "BigAutoField", "ForeignKey", "ManyToManyField"}
+        if isinstance(structured_analysis, dict):
+            for model in structured_analysis.get("models", []) or []:
+                if not isinstance(model, dict) or model.get("name") == "Meta":
+                    continue
+                for field in model.get("fields", []) or []:
+                    if not isinstance(field, dict):
+                        continue
+                    if (
+                        field.get("required")
+                        and not field.get("default")
+                        and field.get("type") not in _auto_types
+                        and field.get("name") not in ("id", "owner")
+                    ):
+                        name = str(field.get("name"))
+                        if name and name not in required:
+                            required.append(name)
+
+        required_line = (
+            f"        - REQUIRED fields for create (omit/empty ONE of these to force a 400): {', '.join(required)}\n"
+            if required else
+            "        - To force a 400, omit or empty a REQUIRED field (not an optional/blank one).\n"
+        )
+
+        return f"""
+        ## TEST DATA & FAILURE CASES - CRITICAL:
+        - For any LIST success test that asserts a non-empty result, FIRST create
+          at least one object owned by the authenticated user (e.g. via the model's
+          .objects.create(..., owner=self.user)) so the list is not empty.
+        - Only assert a non-empty list AFTER creating objects in that test.
+{required_line}        - Do NOT expect a 400 just for omitting an optional field — it will return 201/200.
 """
 
     def _generate_tests_with_ai_prompt(
@@ -369,20 +550,12 @@ class EnhancedTestGenerator:
                 user_prompt += """
         - This project uses Django session authentication
         - Use client.login() for authentication
-        - Example: self.client.login(email='test@example.com', password='password123')
+        - Example: self.client.login(email='test@example.com', password='Str0ng!Pass99')
 """
 
+            user_model_info = self._user_model_guidance()
             user_prompt += f"""
-        ## CRITICAL USER MODEL INFORMATION:
-        - DO NOT import from django.contrib.auth.models
-        - The project uses a CUSTOM User model
-        - User model is located at: {self.analysis.auth_module or 'apps.user.models' if self.analysis else 'apps.user.models'}
-        - User model uses email as the identifier field (not username)
-        - Create users using: User.objects.create_user(email='test@example.com', password='password123', full_name='Test User')
-        - When importing, use one of these methods:
-          1. Preferred: from django.contrib.auth import get_user_model; User = get_user_model()
-          2. Alternative: from apps.user.models import User
-        - NEVER use: from apps.user import User
+{user_model_info}
 
         ## CRITICAL UUID FIELD INFORMATION:
         - The project likely uses UUID primary keys for models
@@ -407,6 +580,10 @@ class EnhancedTestGenerator:
               return SimpleUploadedFile(name, file.getvalue(), content_type='image/jpeg')
           ```
 """
+
+            user_prompt += self._list_response_guidance()
+            user_prompt += self._ownership_scoping_guidance(app_name)
+            user_prompt += self._test_data_guidance(structured_analysis)
 
         # Add import path guidance for each app
         if self.app_module_map:
@@ -441,7 +618,7 @@ class EnhancedTestGenerator:
             user_prompt += """
         - This project uses Django session authentication
         - Use client.login() for authentication
-        - Example: self.client.login(email='test@example.com', password='password123')
+        - Example: self.client.login(email='test@example.com', password='Str0ng!Pass99')
         - DO NOT use force_authenticate() — it doesn't exist on Django's Client
         - DO NOT use APIClient — use Django's test Client
 """
@@ -507,7 +684,7 @@ class EnhancedTestGenerator:
           ```python
           def authenticate(self):
               response = self.client.post('/api/user/login/',
-                  data=json.dumps({'email': 'test@example.com', 'password': 'testpass123'}),
+                  data=json.dumps({'email': 'test@example.com', 'password': 'Str0ng!Pass99'}),
                   content_type='application/json')
               if response.status_code == 200:
                   data = response.json()
@@ -550,6 +727,19 @@ class EnhancedTestGenerator:
         return None
 
     # FILE WRITING
+    @staticmethod
+    def _final_sanitize(content: str) -> str:
+        """Last-line-of-defense fixes applied at the single write choke point.
+
+        ``_clean_code`` already handles these, but this guards against any code
+        path (retries, syntax-fix salvage, partial regenerations) that could let
+        a known-fatal pattern slip through to disk. These substitutions are all
+        idempotent and safe to re-apply.
+        """
+        # self.str(x) is not a method — collapse to the builtin str(x).
+        content = re.sub(r'self\s*\.\s*str\s*\(', 'str(', content)
+        return content
+
     def _write_test_file(
         self,
         app_name: str,
@@ -557,6 +747,8 @@ class EnhancedTestGenerator:
         file_path: Path,
     ) -> str:
         """Write test file to disk with backup support."""
+
+        content = self._final_sanitize(content)
 
         # Ensure parent directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1101,6 +1293,38 @@ CRITICAL RULES:
 
         return '\n'.join(normalized_lines)
 
+    def _ensure_user_defined(self, content: str) -> str:
+        """Guarantee the ``User`` symbol exists when the test references it.
+
+        If the generated code uses ``User`` (e.g. ``User.objects.create_user``)
+        but never imports or assigns it, inject the standard
+        ``User = get_user_model()`` definition just after the import block so the
+        module doesn't blow up with NameError at runtime.
+        """
+        uses_user = re.search(r'\bUser\b\s*[.(]', content)
+        if not uses_user:
+            return content
+
+        # Already defined? (assignment, or imported as a name)
+        if re.search(r'^\s*User\s*=', content, re.MULTILINE):
+            return content
+        if re.search(r'^\s*from\s+\S+\s+import\s+.*\bUser\b', content, re.MULTILINE):
+            return content
+
+        lines = content.split('\n')
+        # Find the last top-level import line to insert after.
+        insert_at = 0
+        for i, line in enumerate(lines):
+            if re.match(r'^\s*(import\s+\S+|from\s+\S+\s+import\s+)', line):
+                insert_at = i + 1
+
+        injection = [
+            'from django.contrib.auth import get_user_model',
+            'User = get_user_model()',
+        ]
+        lines[insert_at:insert_at] = injection
+        return '\n'.join(lines)
+
     def _clean_code(self, content: str) -> str:
         """
         Remove accidental markdown fences and clean up generated code.
@@ -1191,11 +1415,28 @@ CRITICAL RULES:
         # singular/plural variants first and drop the line as a last resort.
         content = self._fix_hallucinated_app_imports(content)
 
-        # Fix wrong get_user_model import pattern
-        content = re.sub(r'from django\.contrib\.auth import get_user_model\nUser = get_user_model\(\)', 'from apps.user.models import User', content)
+        # Only rewrite get_user_model() to a direct import for projects that
+        # actually have a custom apps.* user model. For stock-User projects
+        # (django.contrib.auth) get_user_model() is correct — rewriting it to
+        # `from apps.user.models import User` would import a module that doesn't
+        # exist and break the whole test file.
+        auth_module = self.analysis.auth_module if self.analysis else None
+        if auth_module and auth_module.startswith("apps."):
+            user_module = auth_module if auth_module.endswith(".models") else f"{auth_module}.models"
+            content = re.sub(
+                r'from django\.contrib\.auth import get_user_model\nUser = get_user_model\(\)',
+                f'from {user_module} import User',
+                content,
+            )
+
+        # Ensure the User model is defined when referenced. Weaker models
+        # sometimes use User.objects / User(...) without importing or defining
+        # it, which raises NameError in every test. Inject the standard
+        # get_user_model() definition right after the imports if it's missing.
+        content = self._ensure_user_defined(content)
 
         # Fix reverse() calls - replace with direct URL paths
-        # reverse('app:name') -> '/api/app/name/'  
+        # reverse('app:name') -> '/api/app/name/'
         content = re.sub(r"reverse\(['\"]apply:(\w+)['\"]\)", r"'/api/application/\1/'", content)
         content = re.sub(r"reverse\(['\"]enquiry:(\w+)['\"]\)", r"'/api/enquiry/\1/'", content)
         content = re.sub(r"reverse\(['\"]user:(\w+)['\"]\)", r"'/api/user/\1/'", content)
@@ -1219,13 +1460,46 @@ CRITICAL RULES:
         content = re.sub(r'from rest_framework\.autenfication', 'from rest_framework.authentication', content)
         content = re.sub(r'from rest_framework\.authtoken', '# rest_framework.authtoken not used', content)
         
-        # Fix wrong token endpoints - use /api/user/login/ not /api/auth/token/
-        content = re.sub(r"client\.post\(['\"]/api/auth/token/['\"]", "client.post('/api/user/login/'", content)
-        content = re.sub(r"client\.post\(['\"]/api/token/['\"]", "client.post('/api/user/login/'", content)
+        # Normalise mistaken token endpoints to the project's DETECTED login URL.
+        login_url = (
+            self.analysis.login_url
+            if self.analysis and self.analysis.login_url
+            else "/api/user/login/"
+        )
+        content = re.sub(r"client\.post\(['\"]/api/auth/token/['\"]", f"client.post('{login_url}'", content)
+        content = re.sub(r"client\.post\(['\"]/api/token/['\"]", f"client.post('{login_url}'", content)
 
-        # Fix user creation - User model uses 'full_name' not 'name'
-        content = re.sub(r"'name':\s*'Test User'", "'full_name': 'Test User'", content)
-        content = re.sub(r"'name':\s*'[^']*'", lambda m: m.group(0).replace("'name':", "'full_name':"), content)
+        # Normalise login/token POSTs to the ProjectAnalyzer-detected login URL.
+        # The app-level detector sometimes drops the URL include prefix
+        # (e.g. '/auth/login/' instead of '/api/auth/login/').
+        if self.analysis and self.analysis.login_url:
+            content = re.sub(
+                r"self\.client\.post\(\s*f?['\"][^'\"]*(?:login|/token)[^'\"]*['\"]",
+                f"self.client.post('{self.analysis.login_url}'",
+                content,
+            )
+
+        # Ensure every client request URL ends with a trailing slash. Django's
+        # APPEND_SLASH returns a 301 redirect (not the real response) when a
+        # slash-terminated route is requested without the slash, which makes
+        # every assertion fail. Handles plain and f-strings, both quote styles.
+        def _ensure_trailing_slash(m: re.Match) -> str:
+            prefix, quote, body = m.group(1), m.group(2), m.group(3)
+            if not body or body.endswith("/") or "?" in body:
+                return m.group(0)
+            return f"{prefix}{body}/{quote}"
+
+        content = re.sub(
+            r"(self\.client\.(?:get|post|put|patch|delete)\(\s*f?(['\"]))([^'\"]*)\2",
+            _ensure_trailing_slash,
+            content,
+        )
+
+        # Fix user creation - custom email-based User models use 'full_name' not 'name'.
+        # Only apply to those projects; a stock User has neither field.
+        if self.analysis and self.analysis.username_field == "email":
+            content = re.sub(r"'name':\s*'Test User'", "'full_name': 'Test User'", content)
+            content = re.sub(r"'name':\s*'[^']*'", lambda m: m.group(0).replace("'name':", "'full_name':"), content)
 
         # Strip 'username' from generated tests when the project's User model doesn't have it.
         # ProjectAnalyzer detects the real User fields; if 'username' isn't there, the AI's
@@ -1267,7 +1541,7 @@ CRITICAL RULES:
             # Try to replace force_authenticate with JWT authentication
             content = re.sub(
                 r'self\.client\.force_authenticate\(user=self\.test_user\)',
-                'self.authenticate_jwt(self.test_user.email, "password123")',
+                'self.authenticate_jwt(self.test_user.email, "Str0ng!Pass99")',
                 content
             )
             content = re.sub(
@@ -1279,7 +1553,7 @@ CRITICAL RULES:
             # For session auth, replace with login()
             content = re.sub(
                 r'self\.client\.force_authenticate\(user=self\.test_user\)',
-                'self.client.login(email=self.test_user.email, password="password123")',
+                'self.client.login(email=self.test_user.email, password="Str0ng!Pass99")',
                 content
             )
             content = re.sub(

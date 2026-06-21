@@ -7,8 +7,8 @@ from typing import List, Optional, Dict, Any
 from rich.console import Console
 
 from .base import BaseProvider
+from .nvidia_provider import NvidiaProvider, RateLimitError as NvidiaRateLimitError
 from .groq_provider import GroqProvider, RateLimitError as GroqRateLimitError
-from .ollama_provider import OllamaProvider
 from .together_provider import TogetherProvider, RateLimitError as TogetherRateLimitError
 from .anthropic_provider import AnthropicProvider, RateLimitError as AnthropicRateLimitError
 from .gemini_provider import GeminiProvider, RateLimitError as GeminiRateLimitError
@@ -43,10 +43,12 @@ class ProviderManager:
 
         if not self.providers:
             raise RuntimeError(
-                "No AI providers available. Please configure at least one provider:\n"
-                "  - Groq: Set GROQ_API_KEY in .env\n"
-                "  - Ollama: Install and run 'ollama serve'\n"
-                "  - Together: Set TOGETHER_API_KEY in .env"
+                "No AI providers available. Configure at least one provider in .env:\n"
+                "  - NVIDIA (recommended): Set NVIDIA_API_KEY (free key at https://build.nvidia.com)\n"
+                "  - Groq: Set GROQ_API_KEY\n"
+                "  - Gemini: Set GEMINI_API_KEY\n"
+                "  - Anthropic: Set ANTHROPIC_API_KEY\n"
+                "  - Together: Set TOGETHER_API_KEY"
             )
 
         # Current provider index
@@ -61,8 +63,8 @@ class ProviderManager:
         """Load provider configuration from environment."""
         return {
             "preferred_provider": os.environ.get("AI_PREFERRED_PROVIDER", "auto"),
-            "groq_model": os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant"),
-            "ollama_model": os.environ.get("OLLAMA_MODEL", "llama3.2"),
+            "nvidia_model": os.environ.get("NVIDIA_MODEL", "qwen/qwen3.5-122b-a10b"),
+            "groq_model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
             "together_model": os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
             "anthropic_model": os.environ.get("ANTHROPIC_MODEL", "claude-3.5-sonnet"),
             "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
@@ -72,38 +74,33 @@ class ProviderManager:
         }
 
     def _initialize_providers(self) -> List[BaseProvider]:
-        """Initialize available providers in priority order."""
+        """Initialize available providers.
+
+        NVIDIA NIM is always first priority. The remaining providers
+        (anthropic, groq, gemini, together) are only added if their API key is
+        configured in the environment — otherwise their constructor raises and
+        they are silently skipped here.
+        """
         providers = []
 
-        # Determine priority order
-        preferred = self.config["preferred_provider"].lower()
-
-        # Provider configurations
+        # NVIDIA is pinned first. The rest follow in a fixed order; each only
+        # actually initializes when its API key is present.
         provider_configs = [
+            ("nvidia", NvidiaProvider, {"model": self.config["nvidia_model"]}),
             ("anthropic", AnthropicProvider, {"model": self.config["anthropic_model"], "base_url": self.config.get("anthropic_base_url")}),
             ("groq", GroqProvider, {"model": self.config["groq_model"]}),
             ("gemini", GeminiProvider, {"model": self.config["gemini_model"]}),
             ("together", TogetherProvider, {"model": self.config["together_model"]}),
-            ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
         ]
 
-        # If auto, try to use preferred order based on reliability
-        if preferred == "auto":
-            # Try Groq first, then Anthropic, Gemini, Together, then Ollama
-            #  (local, last fallback) 
-            provider_configs = [
-                ("anthropic", AnthropicProvider, {"model": self.config["anthropic_model"], "base_url": self.config.get("anthropic_base_url")}),
-                ("groq", GroqProvider, {"model": self.config["groq_model"]}),
-                ("gemini", GeminiProvider, {"model": self.config["gemini_model"]}),
-                ("together", TogetherProvider, {"model": self.config["together_model"]}),
-                ("ollama", OllamaProvider, {"model": self.config["ollama_model"]}),
-            ]
-        elif preferred in ["groq", "anthropic", "gemini", "together", "ollama"]:
-            # Move preferred provider to front
+        # AI_PREFERRED_PROVIDER may reorder the NON-nvidia providers (move one
+        # up to just after NVIDIA). NVIDIA always stays first priority.
+        preferred = self.config["preferred_provider"].lower()
+        if preferred in ["anthropic", "groq", "gemini", "together"]:
             preferred_config = next((c for c in provider_configs if c[0] == preferred), None)
             if preferred_config:
                 provider_configs.remove(preferred_config)
-                provider_configs.insert(0, preferred_config)
+                provider_configs.insert(1, preferred_config)
 
         # Initialize providers
         for name, provider_class, config in provider_configs:
@@ -147,9 +144,8 @@ class ProviderManager:
         Returns:
             Generated text content
         """
-        # At minimum, try every provider once before giving up. The previous cap of 2
-        # meant a 5-provider config (anthropic/groq/gemini/together/ollama) could exit
-        # after only the first two failed, never reaching the local Ollama fallback.
+        # Try at least as many times as there are providers (and at least the
+        # configured retry count) before giving up.
         max_retries = max(self.config["max_retries"], len(self.providers))
         retry_delay = min(self.config["retry_delay"], 10)   # Max 10s delay
 
@@ -173,7 +169,7 @@ class ProviderManager:
                 self.console.print(f"[green]✓ {provider_name} succeeded[/green]")
                 return response
 
-            except (GroqRateLimitError, TogetherRateLimitError, AnthropicRateLimitError, GeminiRateLimitError) as e:
+            except (NvidiaRateLimitError, GroqRateLimitError, TogetherRateLimitError, AnthropicRateLimitError, GeminiRateLimitError) as e:
                 # Handle rate limits
                 self.console.print(f"[yellow]⚠ {provider_name} rate limit hit[/yellow]")
                 self._handle_rate_limit(self.current_provider_index)
