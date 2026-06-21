@@ -30,7 +30,7 @@ class EnhancedTestGenerator:
         test_files = generator.generate()
     """
 
-    MAX_TOKENS = 8000  # Maximum tokens for AI test generation (reduced to stay within 12K TPM limit)
+    MAX_TOKENS = 16000  # Max tokens for generation; high enough that a full test file is not truncated mid-code
 
     def __init__(
         self,
@@ -141,57 +141,228 @@ class EnhancedTestGenerator:
 
         file_path = self.output_dir / f"test_{app_name}.py"
 
-        # Step 1: Deeply analyze the app
-        structured_analysis, ai_prompt = self.app_analyzer.analyze_app(
-            app_name, app_endpoints
-        )
-
-        if not ai_prompt:
+        # Step 1: Read the app's RAW source (no lossy LLM summary step).
+        sources = self._read_app_sources(app_name)
+        if not any(sources.values()):
             console.print(
-                f"  [red]✗ Failed to analyze and generate prompt for {app_name}[/red]"
+                f"  [red]✗ Could not read source files for {app_name}[/red]"
             )
             return None
-
-        # Step 2: Use AI prompt to generate test cases
-        console.print(f"\n  [dim]→ Generating test cases using AI prompt...[/dim]")
-        content = self._generate_tests_with_ai_prompt(
-            app_name, app_endpoints, ai_prompt, structured_analysis
+        console.print(
+            f"  [dim]→ Read {sum(1 for v in sources.values() if v)} source file(s) for {app_name}[/dim]"
         )
 
+        # Step 2: One LLM call — raw code + a short, accurate prompt.
+        console.print(f"\n  [dim]→ Generating tests from raw source...[/dim]")
+        content = self._generate_tests_from_raw(app_name, app_endpoints, sources)
         if not content:
             console.print(
                 f"  [red]✗ Failed to generate tests for {app_name}[/red]"
             )
             return None
 
-        content = self._clean_code(content)
+        content = self._clean_code_light(content)
 
-        # Step 2.5: Validate generated code with retry mechanism
+        # Step 2.5: Validate; on syntax failure, one retry.
         validated, content = self._validate_generated_code(content, app_name)
         if not validated:
-            console.print(
-                f"  [red]✗ Generated code validation failed for {app_name}[/red]"
-            )
-            # Retry once with a simpler prompt
-            console.print(f"  [yellow]→ Retrying with simpler prompt...[/yellow]")
-            content = self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
-            if content:
-                content = self._clean_code(content)
-                validated, content = self._validate_generated_code(content, app_name)
-                if not validated:
-                    console.print(
-                        f"  [red]✗ Retry also failed for {app_name}[/red]"
-                    )
-                    return None
-            else:
-                console.print(
-                    f"  [red]✗ Retry generation failed for {app_name}[/red]"
-                )
+            console.print(f"  [yellow]→ Validation failed, retrying once...[/yellow]")
+            content = self._generate_tests_from_raw(app_name, app_endpoints, sources)
+            if not content:
+                console.print(f"  [red]✗ Retry generation failed for {app_name}[/red]")
+                return None
+            content = self._clean_code_light(content)
+            validated, content = self._validate_generated_code(content, app_name)
+            if not validated:
+                console.print(f"  [red]✗ Retry also failed for {app_name}[/red]")
                 return None
 
-        # Step 3: Write to file
+        # Step 3: Write to file (the write choke point applies _final_sanitize).
         written = self._write_test_file(app_name, content, file_path)
         return written
+
+    # RAW SINGLE-STEP GENERATION
+    # Modules that describe an app's API surface + business logic, in the order
+    # we want the model to read them. Each may be a single .py file OR a package
+    # (a folder of the same name, e.g. models/ or services/).
+    _SOURCE_MODULES = (
+        "models", "serializers", "views", "viewsets", "urls", "api",
+        "services", "service", "repositories", "repository", "selectors",
+        "permissions", "filters", "managers", "querysets", "validators",
+        "choices", "enums", "constants", "schemas", "forms", "tasks", "utils",
+    )
+    # Skip noise and anything huge/irrelevant.
+    _SOURCE_SKIP = {"__pycache__", "migrations", "tests", "test", "__init__.py"}
+    _SOURCE_TOTAL_CAP = 28000   # chars; keeps the prompt within context for medium apps
+    _SOURCE_FILE_CAP = 8000     # chars per file; truncate pathological files
+
+    def _resolve_app_dir(self, app_name: str) -> Path | None:
+        app = next((a for a in self.ai_helper.installed_apps
+                    if a.get("app_name") == app_name), None)
+        if app and app.get("app_dir") and Path(app["app_dir"]).exists():
+            return Path(app["app_dir"])
+        if (self.repo_path / app_name).exists():
+            return self.repo_path / app_name
+        return None
+
+    def _read_app_sources(self, app_name: str) -> dict[str, str]:
+        """Read the app's raw source — the ground truth for test generation.
+
+        Grabs models/serializers/views/urls plus any service, repository,
+        permission, selector, filter (etc.) modules, whether each is a single
+        ``.py`` file or a package directory. This is what lets the model write
+        correct tests for medium DRF projects that have a service/repo layer.
+        """
+        app_dir = self._resolve_app_dir(app_name)
+        sources: dict[str, str] = {}
+        if app_dir is None:
+            return sources
+
+        total = 0
+
+        def add(label: str, path: Path) -> None:
+            nonlocal total
+            if total >= self._SOURCE_TOTAL_CAP:
+                return
+            try:
+                text = path.read_text(errors="ignore")
+            except OSError:
+                return
+            if not text.strip():
+                return
+            if len(text) > self._SOURCE_FILE_CAP:
+                text = text[:self._SOURCE_FILE_CAP] + "\n# ...(truncated)...\n"
+            sources[label] = text
+            total += len(text)
+
+        for name in self._SOURCE_MODULES:
+            pyfile = app_dir / f"{name}.py"
+            if pyfile.exists():
+                add(f"{name}.py", pyfile)
+            pkg = app_dir / name
+            if pkg.is_dir():
+                for f in sorted(pkg.glob("*.py")):
+                    if f.name in self._SOURCE_SKIP:
+                        continue
+                    add(f"{name}/{f.name}", f)
+        return sources
+
+    def _clean_code_light(self, content: str) -> str:
+        """Minimal cleanup: strip markdown fences and any leading prose.
+
+        The heavy regex layer is intentionally skipped — the raw-code prompt
+        produces correct code, and the write-time ``_final_sanitize`` still
+        guards the few fatal patterns (self.str, undefined User, bare setUp
+        refs, login URL).
+        """
+        content = content.strip()
+        if content.startswith("```python"):
+            content = content[len("```python"):].strip()
+        elif content.startswith("```"):
+            content = content[3:].strip()
+        if content.endswith("```"):
+            content = content[:-3].strip()
+        # Drop any preamble before the first import/from.
+        m = re.search(r'^(from |import )', content, re.MULTILINE)
+        if m and m.start() > 0:
+            content = content[m.start():]
+        return content
+
+    def _generate_tests_from_raw(
+        self,
+        app_name: str,
+        app_endpoints: list[EndpointInfo],
+        sources: dict[str, str],
+    ) -> str | None:
+        """Single LLM call: raw app source + a short, accurate prompt."""
+        a = self.analysis
+        module = self.app_module_map.get(app_name, app_name)
+        login_url = (a.login_url if a and a.login_url else "/api/auth/login/")
+        cred = (a.username_field if a and a.username_field else "username")
+        auth_type = (a.auth_type if a else "JWT")
+        paginated = self._is_pagination_enabled()
+        list_shape = (
+            "a paginated dict: {'count', 'next', 'previous', 'results': [...]} — read items from response.json()['results']"
+            if paginated else
+            "a plain JSON array: [ {...}, ... ] — response.json() is a list, NOT a dict (do not use ['results'])"
+        )
+
+        if auth_type and auth_type.upper() == "JWT":
+            auth_rules = (
+                f"- Auth: JWT (Bearer). In setUp, create a user with get_user_model().objects.create_user(...),\n"
+                f"  then POST to '{login_url}' with {{'{cred}': <{cred}>, 'password': <password>}}, read the\n"
+                f"  'access' token from the JSON, and set self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {{token}}'.\n"
+                f"- The login credential field is '{cred}'. Use that user's '{cred}' value (not their email unless '{cred}' is email).\n"
+                f"- Invalid/non-existent login returns 401 (SimpleJWT), NOT 400. No token / bad token on a protected endpoint = 401.\n"
+                f"- Do NOT use APIClient, force_authenticate(), or client.login()."
+            )
+        else:
+            auth_rules = (
+                f"- Auth: session. Create the user, then self.client.login({cred}=<value>, password=<password>)."
+            )
+
+        src_blocks = "\n".join(
+            f"### {fname}\n```python\n{code.strip()}\n```"
+            for fname, code in sources.items() if code.strip()
+        )
+        endpoint_lines = "\n".join(
+            f"- {', '.join(ep.http_methods)} {ep.url_pattern}"
+            f"{' [auth required]' if ep.requires_auth else ' [public]'}"
+            for ep in app_endpoints
+        )
+
+        system_prompt = (
+            "You are an expert Django REST Framework test engineer. You are given the "
+            "REAL source code of one app. Write a complete, correct Django TestCase file "
+            "that exercises its API endpoints over HTTP. Return ONLY Python code — no "
+            "markdown fences, no prose."
+        )
+
+        user_prompt = f"""Write a Django test file for the "{app_name}" app, based on its real source code below.
+
+## Source code
+{src_blocks}
+
+## Endpoints to test
+{endpoint_lines}
+
+## Rules (follow exactly)
+- Imports: `from django.test import TestCase, Client` and `import json`. Get the user model with
+  `from django.contrib.auth import get_user_model` then `User = get_user_model()`.
+- Use ABSOLUTE imports for this app's models: `from {module}.models import <Model>`. Never relative imports.
+- Use the test Client with JSON: self.client.post(url, data=json.dumps(payload), content_type='application/json').
+- Use the EXACT URL paths from urls.py above (login URL is '{login_url}'). End every URL with a trailing slash.
+- Convert object ids/pks to str() inside URL f-strings: f'/api/.../{{str(obj.id)}}/'.
+{auth_rules}
+- List (GET collection) responses are {list_shape}.
+- Read the serializer to know which fields are REQUIRED vs optional. Only a missing/empty REQUIRED field returns 400.
+  Optional blank text fields come back as '' (empty string), not None.
+- Read-only/server-set fields (id, owner, created_at, updated_at) are IGNORED in payloads (no 400). Don't assert their exact value — only assertIn('<field>', response.json()).
+- write_only fields (e.g. 'password') are NEVER returned in the response body — use assertNotIn('password', response.json()), never assertIn. Never write contradictory assertions.
+- Test ONLY the HTTP endpoints listed above. Do NOT test ORM internals (cascade deletes, signals, manager methods).
+- Write a FOCUSED suite: for each endpoint cover the main success case plus the key
+  failure cases (auth → 401 without token; validation → 400; not found → 404;
+  ownership-scoped detail of another user's object → 404). Do NOT generate dozens of
+  redundant edge-case permutations — prefer a clear, reliable suite of ~2-4 tests per endpoint.
+- Every test method must be self-consistent: never put two contradictory assertions
+  (e.g. assertIn and assertNotIn for the same key) in one test.
+
+Return ONLY the complete Python test file."""
+
+        response = self.ai_helper.call_with_retry(
+            model=self.ai_helper.MODEL,
+            max_tokens=self.MAX_TOKENS,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        content = response.choices[0].message.content if response else None
+        if not content or not content.strip():
+            console.print(f"    [yellow]⚠ Empty response from model[/yellow]")
+            return None
+        console.print(f"    [green]✓ Generated {len(content)} chars of test code[/green]")
+        return content
 
     def _jwt_auth_guidance(self, structured_analysis: dict) -> str:
         """Build JWT authentication guidance for the generation prompt.
@@ -260,6 +431,10 @@ class EnhancedTestGenerator:
           ```
         - Call this helper in setUp() before authenticated requests
         - DO NOT use APIClient -- use Django's test Client
+        - LOGIN STATUS CODES: a successful login returns 200; login with WRONG or
+          NON-EXISTENT credentials returns 401 (SimpleJWT TokenObtainPairView),
+          NOT 400. Assert 401 for invalid-login tests.
+        - Accessing an authenticated endpoint with no/invalid token returns 401.
 """
 
         # Default: header-based Bearer token auth (simple CRUD APIs).
@@ -283,6 +458,10 @@ class EnhancedTestGenerator:
           ```
         - Call this helper in setUp() before authenticated requests
         - DO NOT use APIClient -- use Django's test Client
+        - LOGIN STATUS CODES: a successful login returns 200; login with WRONG or
+          NON-EXISTENT credentials returns 401 (SimpleJWT TokenObtainPairView),
+          NOT 400. Assert 401 for invalid-login tests.
+        - Accessing an authenticated endpoint with no/invalid token returns 401.
 """
 
     def _user_model_guidance(self) -> str:
@@ -454,6 +633,32 @@ class EnhancedTestGenerator:
           .objects.create(..., owner=self.user)) so the list is not empty.
         - Only assert a non-empty list AFTER creating objects in that test.
 {required_line}        - Do NOT expect a 400 just for omitting an optional field — it will return 201/200.
+
+        ## TEST SCOPE - CRITICAL:
+        - Test ONLY the listed API endpoints by making HTTP requests with the
+          test Client and asserting on the responses.
+        - Do NOT write tests for ORM/model internals: no cascade-delete behavior,
+          signals, manager methods, or filtering with model instances. Those are
+          not endpoints and often error (e.g. "Model instances passed to related
+          filters must be saved").
+
+        ## CONSERVATIVE ASSERTIONS - CRITICAL (avoid speculative assertions):
+        - Assert status codes and assertIn('<field>', response.json()) for fields
+          that exist in the serializer. Do NOT invent response keys.
+        - The JWT login response contains ONLY the token fields (e.g. 'access',
+          'refresh'). Do NOT assert keys like 'status', 'message', or 'success'.
+        - A blank/optional text field comes back as an EMPTY STRING '' , NOT None.
+          Use assertEqual(value, '') — never assertIsNone — for optional text fields.
+        - DO NOT write ANY test that sends a read-only/server-set field (id, owner,
+          created_at, updated_at, pk) in a create/update payload and expects a 400
+          or other 4xx. DRF SILENTLY IGNORES those fields, so the request SUCCEEDS
+          (201/200). Such a test always fails — do not generate it at all.
+          (e.g. NO test_create_todo_with_owner_in_payload expecting 400, NO
+          test_readonly_fields_rejected expecting 400.)
+        - Do NOT assert the EXACT value of read-only/derived fields like 'owner'.
+          It may serialize as a username string, an id, or a nested object — you
+          cannot know which. Only assert its PRESENCE: assertIn('owner', response.json()).
+          Never assertEqual(response.json()['owner'], self.user.id).
 """
 
     def _generate_tests_with_ai_prompt(
@@ -494,11 +699,15 @@ class EnhancedTestGenerator:
           - DO NOT use client.login() or force_authenticate() with JWT - they won't work
           - Create a helper that logs in, stores the access token, and sends it as a header
           - Set the header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          - Example helper method structure:
+          - Use the EXACT login credential field named in the analysis below
+            (it is 'username' for stock django.contrib.auth.User, 'email' for
+            email-based custom users). Do NOT default to 'email'.
+          - Example helper method structure (replace CREDENTIAL_FIELD with the
+            field from the analysis, and use the real login URL):
             ```python
-            def authenticate_jwt(self, email, password):
-                payload = {'email': email, 'password': password}
-                response = self.client.post('/api/user/login/', json.dumps(payload), content_type='application/json')
+            def authenticate_jwt(self, credential, password):
+                payload = {'CREDENTIAL_FIELD': credential, 'password': password}
+                response = self.client.post('<login_url>', json.dumps(payload), content_type='application/json')
                 if response.status_code == 200:
                     token = response.json().get('access', response.json().get('token'))
                     self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
@@ -677,24 +886,14 @@ class EnhancedTestGenerator:
         - WRONG ORDER: self.auth = self.get_auth_helper() before self.user_data is set
         - CORRECT ORDER: 1) self.user_data = {...}  2) self.user = User.objects.create(...)  3) self.authenticate()
 
-        ## CRITICAL AUTHENTICATION FOR THIS PROJECT:
-        - This project uses JWT with Bearer-token authentication
-        - Log in, read the access token from the response, and send it as a header
-        - The correct authentication helper pattern:
-          ```python
-          def authenticate(self):
-              response = self.client.post('/api/user/login/',
-                  data=json.dumps({'email': 'test@example.com', 'password': 'Str0ng!Pass99'}),
-                  content_type='application/json')
-              if response.status_code == 200:
-                  data = response.json()
-                  token = data.get('access') or data.get('data', {}).get('access')
-                  if token:
-                      self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'
-          ```
-        - Call authenticate() in setUp() after creating test data
-        - DO NOT use rest_framework.authtoken - this project uses JWT
-        - DO NOT use Token.objects.create() - use the login endpoint
+        ## CRITICAL AUTHENTICATION REMINDERS:
+        - Follow the authentication helper shown in the analysis above EXACTLY.
+        - Use the login credential field named there (do NOT default to 'email').
+        - Log in via the real login URL, read the access token, and send it as a
+          header: self.client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'.
+        - The login payload value must match a user you created in setUp(): if the
+          credential field is 'username', send that user's username (not their email).
+        - DO NOT use rest_framework.authtoken or Token.objects.create() - use the login endpoint.
 
         Generate the complete test file now — ONLY Python code, no markdown, no explanation."""
 
@@ -708,36 +907,62 @@ class EnhancedTestGenerator:
             ],
         )
 
+        content = None
         if response:
             content = response.choices[0].message.content
-            if content:
-                # Check if AI returned instructions instead of code
-                if self._is_instructions_not_code(content):
-                    console.print(f"    [yellow]⚠ AI returned instructions instead of code, retrying...[/yellow]")
-                    # Try to generate again with simpler prompt
-                    return self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
 
-                console.print(
-                    f"    [green]✓ Generated {len(content)} chars of test code[/green]"
-                )
-                return content
-        else:
-            console.print(f"    [red]✗ AI generation failed after retries[/red]")
+        # Empty/missing content (e.g. a transient empty model response) — retry
+        # with the simpler prompt instead of silently giving up.
+        if not content or not content.strip():
+            console.print(f"    [yellow]⚠ AI returned empty content, retrying with simpler prompt...[/yellow]")
+            return self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
 
-        return None
+        # Check if AI returned instructions instead of code
+        if self._is_instructions_not_code(content):
+            console.print(f"    [yellow]⚠ AI returned instructions instead of code, retrying...[/yellow]")
+            return self._retry_with_simpler_prompt(app_name, app_endpoints, ai_prompt, structured_analysis)
+
+        console.print(
+            f"    [green]✓ Generated {len(content)} chars of test code[/green]"
+        )
+        return content
 
     # FILE WRITING
-    @staticmethod
-    def _final_sanitize(content: str) -> str:
+    def _final_sanitize(self, content: str) -> str:
         """Last-line-of-defense fixes applied at the single write choke point.
 
         ``_clean_code`` already handles these, but this guards against any code
         path (retries, syntax-fix salvage, partial regenerations) that could let
         a known-fatal pattern slip through to disk. These substitutions are all
-        idempotent and safe to re-apply.
+        idempotent and safe to re-apply, so we run the must-be-correct passes
+        here too — they are what actually prevents NameError/AttributeError at
+        runtime regardless of how the content was produced.
         """
         # self.str(x) is not a method — collapse to the builtin str(x).
         content = re.sub(r'self\s*\.\s*str\s*\(', 'str(', content)
+        # A reverse() to an unregistered namespace (e.g. "api:auth:login") raises
+        # NoReverseMatch and errors the whole module — map login reverses to the
+        # detected login URL.
+        if self.analysis and self.analysis.login_url:
+            login_url = self.analysis.login_url
+            content = re.sub(
+                r"reverse\(\s*['\"][^'\"]*login[^'\"]*['\"]\s*\)",
+                f"'{login_url}'",
+                content,
+            )
+            # Normalise any login-path string literal (e.g. a variable like
+            # self.login_url = '/auth/login/' that dropped the '/api' include
+            # prefix) to the detected login URL. Matches URL-path literals
+            # containing 'login'; the register/other URLs don't contain it.
+            content = re.sub(
+                r"(['\"])/[A-Za-z0-9_/-]*login[A-Za-z0-9_/-]*/?\1",
+                f"'{login_url}'",
+                content,
+            )
+        # Guarantee User is defined when referenced.
+        content = self._ensure_user_defined(content)
+        # Prefix bare references to setUp instance attributes with self.
+        content = self._fix_missing_self_references(content)
         return content
 
     def _write_test_file(
@@ -1293,6 +1518,43 @@ CRITICAL RULES:
 
         return '\n'.join(normalized_lines)
 
+    def _fix_missing_self_references(self, content: str) -> str:
+        """Prefix bare references to setUp instance attributes with ``self.``.
+
+        Models sometimes assign ``self.todo_a = ...`` in setUp() but then write
+        ``todo_a`` (without ``self.``) inside a test method, raising NameError.
+        We only rewrite names that are assigned exclusively as ``self.<name>``
+        and never as a bare local ``<name> = ...`` — so genuine locals are left
+        untouched.
+        """
+        instance_attrs = set(re.findall(r'\bself\.(\w+)\s*=', content))
+        if not instance_attrs:
+            return content
+
+        local_assigns = set(re.findall(r'^[ \t]*(\w+)\s*=(?!=)', content, re.MULTILINE))
+
+        # Candidates: assigned via self. only, never as a plain local, and not
+        # dunder/short noise.
+        candidates = {
+            name for name in instance_attrs
+            if name not in local_assigns and len(name) > 1 and not name.startswith('__')
+        }
+        if not candidates:
+            return content
+
+        for name in candidates:
+            # Replace bare `name` only when it is used as an object — immediately
+            # followed by an attribute access / call / subscript / separator
+            # (`.`, `(`, `[`, `,`, `)`). This catches `todo_a.id`, `owner=todo_a)`
+            # while leaving prose in docstrings/comments (e.g. "existing user")
+            # untouched. Skips `self.name`, `x.name`, and longer names.
+            content = re.sub(
+                rf'(?<![\w.])(?<!self\.){name}(?=\s*[.\[(),])',
+                f'self.{name}',
+                content,
+            )
+        return content
+
     def _ensure_user_defined(self, content: str) -> str:
         """Guarantee the ``User`` symbol exists when the test references it.
 
@@ -1434,6 +1696,19 @@ CRITICAL RULES:
         # it, which raises NameError in every test. Inject the standard
         # get_user_model() definition right after the imports if it's missing.
         content = self._ensure_user_defined(content)
+
+        # Prefix bare references to setUp instance attributes with self.
+        content = self._fix_missing_self_references(content)
+
+        # Generic auth reverse() -> the project's detected login URL. Models
+        # sometimes emit reverse("api:auth:login") with a namespace that isn't
+        # registered, which raises NoReverseMatch and errors the entire module.
+        if self.analysis and self.analysis.login_url:
+            content = re.sub(
+                r"reverse\(\s*['\"][^'\"]*login[^'\"]*['\"]\s*\)",
+                f"'{self.analysis.login_url}'",
+                content,
+            )
 
         # Fix reverse() calls - replace with direct URL paths
         # reverse('app:name') -> '/api/app/name/'
