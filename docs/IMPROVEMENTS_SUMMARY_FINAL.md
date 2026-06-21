@@ -1,5 +1,10 @@
 # DjangoProbe Test Generation - FINAL IMPROVEMENTS SUMMARY
 
+> **⚠️ Historical doc.** These changes targeted `app_analyzer.py` / the old two-step
+> generation flow. Generation now uses a single-step raw-code generator (one LLM
+> call on the app's raw source); `app_analyzer.py` is no longer used by generation.
+> See `CLAUDE.md` for the current design.
+
 ## Problem Analysis
 
 The original test generation system had critical issues when testing the Brilliant Sagarmatha Server Django project:

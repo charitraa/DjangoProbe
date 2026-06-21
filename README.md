@@ -134,12 +134,10 @@ DjangoProbe follows a modular pipeline with AI-powered deep app analysis:
 - Discovers safe User model fields (excludes ManyToMany for create_user())
 - Identifies roles, FK fields, M2M fields
 
-### 5. Deep App Analysis & Test Generation
-- Deeply analyzes each Django app using `AppAnalyzer`
-- Parses models.py, serializers.py, views.py, urls.py
-- Generates AI-powered custom prompts based on code analysis
-- Examines models, serializers, views, and relationships
-- Creates comprehensive test cases with better coverage
+### 5. Single-Step Raw-Code Test Generation
+- Reads each app's **raw source** — models.py, serializers.py, views.py, urls.py, plus any services/repositories/permissions/selectors/filters (file or package)
+- Makes **one LLM call** with that raw code + a short, accurate prompt (real login URL/credential field, pagination shape, DRF facts)
+- Lightly cleans the output, validates it, and applies a small write-time safety net
 - Writes tests to `tests/generated/test_<app_name>.py`
 
 ### 6. Test Execution
@@ -259,21 +257,17 @@ for test_file in test_files:
     results = runner.run_custom_test_label(test_file)
 ```
 
-### Single App Analysis
+### Generate tests for a single app
 
 ```python
-from ai_tester import AIHelper, AppAnalyzer
+from ai_tester.enhanced_test_generator import EnhancedTestGenerator
 
-# Create analyzer
-ai_helper = AIHelper("/path/to/project", analysis)
-app_analyzer = AppAnalyzer("/path/to/project", ai_helper)
+# endpoints: list[EndpointInfo] from EndpointScanner; analysis: ProjectAnalysis
+generator = EnhancedTestGenerator("/path/to/project", endpoints, analysis)
 
-# Analyze specific app
-analysis, ai_prompt = app_analyzer.analyze_app(app_name, endpoints)
-
-print(f"Models: {len(analysis['models'])}")
-print(f"Serializers: {len(analysis['serializers'])}")
-print(f"AI Prompt: {ai_prompt}")
+# Reads the app's raw source, makes one LLM call, writes the test file
+test_file = generator.generate_for_app("blog", app_endpoints)
+print(f"Wrote: {test_file}")
 ```
 
 ## Example Output

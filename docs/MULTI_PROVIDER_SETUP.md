@@ -1,82 +1,61 @@
 # Multi-Provider AI System Setup Guide
 
-DjangoProbe now supports multiple AI providers with automatic fallback, giving you free and reliable options for test generation.
+DjangoProbe supports multiple AI providers with automatic fallback. **NVIDIA NIM
+is always first priority.** The other providers are fallbacks and only run when
+their API key is configured in the environment.
 
 ## Supported Providers
 
-### 1. Groq (Remote API)
-- **Cost**: Free tier available
-- **Speed**: Very fast
-- **Setup**: Get API key from [console.groq.com](https://console.groq.com/)
-- **Models**: Llama 3.3 70B, Llama 3.1 8B, Gemma 2 9B
-- **Rate Limits**: 14,400 requests/day, 30 requests/minute
+### 1. NVIDIA NIM (recommended, first priority)
+- **Cost**: Free tier
+- **API**: OpenAI-compatible (`https://integrate.api.nvidia.com/v1`)
+- **Setup**: Get a key (starts with `nvapi-`) at [build.nvidia.com](https://build.nvidia.com)
+- **Models**: e.g. `qwen/qwen3.5-122b-a10b` (coding/reasoning, default), `qwen/qwen3-next-80b-a3b-instruct`
+- **Note**: copy the exact model id from the model's page; a wrong id returns a 404
 
-### 2. Ollama (Local - Recommended)
-- **Cost**: Completely free
-- **Speed**: Fast (depends on your hardware)
-- **Setup**: Install Ollama locally
-- **Models**: Llama 3.2, Mistral, Qwen 2.5, CodeLlama
-- **Rate Limits**: None (runs locally)
+### 2. Groq (remote API)
+- **Cost**: Free tier
+- **Setup**: Get an API key from [console.groq.com](https://console.groq.com/)
+- **Models**: `llama-3.3-70b-versatile` (default), `llama-3.1-8b-instant`
 
-### 3. Together AI (Remote API)
-- **Cost**: Free tier available
-- **Speed**: Fast
-- **Setup**: Get API key from [api.together.xyz](https://api.together.xyz/)
-- **Models**: Llama 3.2 90B, Llama 3.1 70B, Qwen 2.5 72B
-- **Rate Limits**: ~10,000-50,000 tokens/month on free tier
+### 3. Gemini (remote API)
+- **Cost**: Free tier
+- **Setup**: Get an API key from [aistudio.google.com](https://aistudio.google.com/)
+- **Models**: `gemini-2.0-flash` (default)
+
+### 4. Anthropic (remote API)
+- **Setup**: Get an API key from [console.anthropic.com](https://console.anthropic.com/)
+- **Models**: `claude-3.5-sonnet` (default); supports a custom `ANTHROPIC_BASE_URL`
+
+### 5. Together AI (remote API)
+- **Cost**: Free tier
+- **Setup**: Get an API key from [api.together.xyz](https://api.together.xyz/)
+- **Models**: `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` (default)
 
 ## Quick Setup
 
-### Option 1: Ollama (Recommended - Completely Free)
+### Recommended: NVIDIA NIM
 
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
+# Get a free key at https://build.nvidia.com (starts with nvapi-)
+cat > .env << EOF
+AI_PREFERRED_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-your_key_here
+NVIDIA_MODEL=qwen/qwen3.5-122b-a10b
+EOF
 
-# Start Ollama server (in one terminal)
-ollama serve
-
-# Download a model (in another terminal)
-ollama pull llama3.2
-
-# Run DjangoProbe - it will automatically use Ollama
 djangoprobe ~/path/to/your/project
 ```
 
-### Option 2: Groq (Fast Remote API)
+### Other providers (optional fallbacks)
+
+Add any of these keys; each provider only initializes when its key is present:
 
 ```bash
-# Get API key from https://console.groq.com/keys
-
-# Add to your .env file
-echo "GROQ_API_KEY=gsk_your_key_here" >> .env
-
-# Run DjangoProbe
-djangoprobe ~/path/to/your/project
-```
-
-### Option 3: Together AI (Good Free Tier)
-
-```bash
-# Get API key from https://api.together.xyz/
-
-# Add to your .env file
-echo "TOGETHER_API_KEY=your_key_here" >> .env
-
-# Run DjangoProbe
-djangoprobe ~/path/to/your/project
-```
-
-## Multiple Providers (Best Reliability)
-
-Configure multiple providers for automatic fallback:
-
-```bash
-# .env file
-GROQ_API_KEY=gsk_your_groq_key
-TOGETHER_API_KEY=your_together_key
-
-# Ollama will be auto-detected if running
+GROQ_API_KEY=gsk_your_key_here
+GEMINI_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
+TOGETHER_API_KEY=your_key_here
 ```
 
 ## Configuration Options
@@ -84,183 +63,95 @@ TOGETHER_API_KEY=your_together_key
 ### Environment Variables
 
 ```bash
-# Provider Selection
-AI_PREFERRED_PROVIDER=auto        # auto, groq, ollama, together
+# Provider selection (NVIDIA is always first regardless of this value;
+# it only reorders the non-NVIDIA providers)
+AI_PREFERRED_PROVIDER=auto        # auto, nvidia, anthropic, groq, gemini, together
 
-# Model Selection
-GROQ_MODEL=llama-3.1-8b-instant
-OLLAMA_MODEL=llama3.2
-TOGETHER_MODEL=meta-llama/Llama-3.1-8b-chat-Instruct-Turbo
+# Models
+NVIDIA_MODEL=qwen/qwen3.5-122b-a10b
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1   # optional; any OpenAI-compatible endpoint
+GROQ_MODEL=llama-3.3-70b-versatile
+GEMINI_MODEL=gemini-2.0-flash
+ANTHROPIC_MODEL=claude-3.5-sonnet
+TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
 
-# Retry Configuration
+# Retry / fallback
 AI_MAX_RETRIES=3
 AI_RETRY_DELAY=60
 ```
 
 ### Priority Order
 
-By default, providers are tried in this order:
-1. **Ollama** (if available) - Free, local
-2. **Groq** (if configured) - Fast, good rate limits
-3. **Together AI** (if configured) - Good free tier
+Providers are tried in this order (NVIDIA always first):
 
-You can customize this with `AI_PREFERRED_PROVIDER`:
+1. **NVIDIA** (first priority)
+2. **Anthropic** (if `ANTHROPIC_API_KEY` set)
+3. **Groq** (if `GROQ_API_KEY` set)
+4. **Gemini** (if `GEMINI_API_KEY` set)
+5. **Together** (if `TOGETHER_API_KEY` set)
 
-```bash
-# Prefer Groq first
-AI_PREFERRED_PROVIDER=groq
-
-# Prefer Together AI first
-AI_PREFERRED_PROVIDER=together
-
-# Let system decide (default)
-AI_PREFERRED_PROVIDER=auto
-```
+`AI_PREFERRED_PROVIDER` can move one of the non-NVIDIA providers up to just after
+NVIDIA, but NVIDIA always stays first. On any error or rate limit, the manager
+rotates to the next available provider.
 
 ## Model Recommendations
 
-### For Best Quality
+For DjangoProbe's job (reading raw DRF source and writing a complete test file),
+prefer strong coding/instruction-following models:
+
+- **NVIDIA**: `qwen/qwen3.5-122b-a10b` (coding/reasoning) or `qwen/qwen3-next-80b-a3b-instruct`
 - **Groq**: `llama-3.3-70b-versatile`
-- **Ollama**: `llama3.2:70b` (requires good hardware)
-- **Together**: `meta-llama/Llama-3.2-90b-chat-preview`
-
-### For Best Speed
-- **Groq**: `llama-3.1-8b-instant`
-- **Ollama**: `llama3.2:3b` (fastest)
-- **Together**: `meta-llama/Llama-3.1-8b-chat-Instruct-Turbo`
-
-### For Best Rate Limits
-- **Groq**: `llama-3.1-8b-instant` (highest rate limits)
-- **Ollama**: Any model (unlimited)
-- **Together**: `meta-llama/Llama-3.1-8b-chat-Instruct-Turbo`
+- **Gemini**: `gemini-2.0-flash`
 
 ## Troubleshooting
 
-### Ollama Issues
+**No providers available**
+- Set at least one API key in `.env` (NVIDIA recommended).
 
-**Ollama not found:**
-```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
-```
+**NVIDIA returns 404 for the model**
+- The model id is wrong. Copy the exact id from the model page on build.nvidia.com
+  (the code snippet shows `model="..."`).
 
-**Model not available:**
-```bash
-# Download the model
-ollama pull llama3.2
+**Rate limit / quota exceeded**
+- Configure additional providers for automatic fallback. Groq also supports
+  numbered keys for rotation: `GROQ_API_KEY_1`, `GROQ_API_KEY_2`, ...
 
-# List available models
-ollama list
-```
-
-**Server not running:**
-```bash
-# Start Ollama server
-ollama serve
-```
-
-### Groq Issues
-
-**Rate limit errors:**
-- Switch to smaller model: `GROQ_MODEL=llama-3.1-8b-instant`
-- Add multiple API keys: `GROQ_API_KEY_1`, `GROQ_API_KEY_2`, `GROQ_API_KEY_3`
-
-**Invalid API key:**
-- Get a new key from [console.groq.com](https://console.groq.com/keys)
-- Ensure key starts with `gsk_`
-
-### Together AI Issues
-
-**Quota exceeded:**
-- Check your usage at [api.together.xyz](https://api.together.xyz/)
-- Consider upgrading to paid tier or switching providers
-
-**Invalid API key:**
-- Get a new key from [api.together.xyz/keys](https://api.together.xyz/keys)
-
-## Performance Comparison
-
-| Provider | Speed | Quality | Cost | Rate Limits |
-|----------|-------|---------|------|-------------|
-| Ollama   | Medium (depends on hardware) | High | Free | Unlimited |
-| Groq     | Very Fast | High | Free | 14.4K/day |
-| Together | Fast | Excellent | Free tier | ~10-50K tokens/month |
+**Invalid API key**
+- NVIDIA keys start with `nvapi-`, Groq with `gsk_`, Gemini with `AIza`.
 
 ## Advanced Usage
 
 ### Custom Provider Configuration
 
-You can customize provider behavior programmatically:
-
 ```python
 from ai_tester.providers.manager import ProviderManager
 
-# Initialize with custom settings
 manager = ProviderManager(repo_path="/path/to/project")
-
-# Generate text with specific parameters
 response = manager.generate_text(
-    messages=[
-        {"role": "user", "content": "Generate test cases..."}
-    ],
+    messages=[{"role": "user", "content": "Generate test cases..."}],
     max_tokens=4096,
-    temperature=0.7
+    temperature=0.7,
 )
-
-# Check provider status
 status = manager.get_provider_status()
 print(f"Current provider: {status['current_provider']}")
 ```
 
 ### Adding Custom Providers
 
-You can add custom providers by extending `BaseProvider`:
+Extend `BaseProvider` (see `ai_tester/providers/nvidia_provider.py` for an
+OpenAI-compatible example) and register it in `ProviderManager._initialize_providers`:
 
 ```python
 from ai_tester.providers.base import BaseProvider
 
 class CustomProvider(BaseProvider):
-    def generate_text(self, messages, **kwargs):
-        # Your implementation
-        pass
-
-    def get_model_info(self):
-        return {"provider": "Custom", "model": "my-model"}
-
-    def is_available(self):
-        return True
+    def generate_text(self, messages, **kwargs): ...
+    def get_model_info(self): return {"provider": "Custom", "current_model": "my-model"}
+    def is_available(self): return True
 ```
-
-## Migration from Single Provider
-
-If you were using the old Groq-only setup:
-
-1. **No changes needed** - The system is backward compatible
-2. **Optional**: Add more providers for reliability
-3. **Recommended**: Set `GROQ_MODEL=llama-3.1-8b-instant` for better rate limits
-
-```bash
-# Old .env (still works)
-GROQ_API_KEY=gsk_...
-
-# New .env (better)
-GROQ_API_KEY=gsk_...
-GROQ_MODEL=llama-3.1-8b-instant
-TOGETHER_API_KEY=...
-# Ollama will be auto-detected
-```
-
-## Getting Help
-
-- **Documentation**: Check this guide and the main README
-- **Issues**: Report bugs on GitHub
-- **Discussions**: Ask questions in GitHub Discussions
 
 ## Summary
 
-✅ **Ollama** - Best for completely free, local usage
-✅ **Groq** - Best for fast remote API with good free tier
-✅ **Together AI** - Good alternative with excellent models
-✅ **Multiple Providers** - Best reliability with automatic fallback
-
-Start with Ollama for free local testing, then add Groq/Together for cloud backup!
+✅ **NVIDIA NIM** — recommended primary, free tier, OpenAI-compatible
+✅ **Groq / Gemini / Anthropic / Together** — optional fallbacks, run only with a key
+✅ **Automatic fallback** — rotates on error/rate-limit; NVIDIA always tried first

@@ -1,5 +1,10 @@
 # DjangoProbe Test Generation Fixes - Implementation Summary
 
+> **⚠️ Historical doc.** Some fixes below targeted the old two-step `AppAnalyzer`
+> generation flow, which has since been replaced by a single-step raw-code
+> generator (one LLM call on the app's raw source + a small write-time safety net).
+> See `CLAUDE.md` → "Single-step raw-code generation" for the current design.
+
 ## Problems Fixed
 
 This document summarizes the critical issues identified in the test generation system and the fixes implemented.

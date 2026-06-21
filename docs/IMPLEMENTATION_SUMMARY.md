@@ -1,5 +1,13 @@
 # DjangoProbe Implementation Summary
 
+> **⚠️ Architecture update (historical doc).** The two-step `AppAnalyzer.analyze_app`
+> → `_generate_tests_with_ai_prompt` flow and the large `_clean_code` regex layer
+> described below have been **replaced by a single-step raw-code generator**: per app,
+> read the raw source and make one LLM call, then a small write-time safety net
+> (`_final_sanitize`). `AppAnalyzer` is no longer used by generation. The provider
+> set is now NVIDIA (first) + Anthropic/Groq/Gemini/Together (Ollama removed).
+> See `CLAUDE.md` for the current design.
+
 ## Overview
 
 DjangoProbe is an AI-powered Django API test runner that automatically discovers endpoints, performs deep app analysis, and generates intelligent test cases. The system uses AI-powered analysis to understand code structure and generate comprehensive test coverage.

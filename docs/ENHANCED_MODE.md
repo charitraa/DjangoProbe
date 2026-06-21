@@ -1,5 +1,13 @@
 # DjangoProbe AI-Powered Analysis
 
+> **⚠️ Architecture update (historical doc).** Test generation no longer uses the
+> two-step `AppAnalyzer` summarize-then-generate flow described below. It now does
+> a **single LLM call on the app's raw source** (models/serializers/views/urls +
+> any services/repositories/permissions), with a short accurate prompt and a small
+> write-time safety net. `AppAnalyzer`/`DjangoSpecificAnalyzer` still exist in the
+> tree but are no longer used by generation. See `CLAUDE.md` →
+> "Single-step raw-code generation" for the current design.
+
 ## Overview
 
 DjangoProbe uses **AI-powered deep app analysis** to generate intelligent and comprehensive test cases. This analysis examines each Django app's code structure to create custom test cases that are tailored to the specific implementation.

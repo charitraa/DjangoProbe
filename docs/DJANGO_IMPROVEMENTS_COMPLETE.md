@@ -1,5 +1,10 @@
 # Django-Specific Test Generation Improvements - COMPLETE
 
+> **⚠️ Historical doc.** These improvements were made to `app_analyzer.py` / the old
+> two-step generation flow. Generation now uses a single-step raw-code generator
+> (one LLM call on the app's raw source); `app_analyzer.py` is no longer used by
+> generation. See `CLAUDE.md` for the current design.
+
 ## Overview
 
 The DjangoProbe test generation system has been enhanced with comprehensive Django-specific capabilities. These improvements focus on making the system work correctly with all types of Django projects, especially those using Django REST Framework (DRF).
