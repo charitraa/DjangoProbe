@@ -13,6 +13,16 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 - **Multiple Input Sources**: Supports local paths, GitHub, GitLab, and SSH URLs
 - **Authentication Detection**: Automatically detects JWT, Token, and Session authentication
 
+## Demo
+
+Discovery, project analysis, and multi-provider setup:
+
+![DjangoProbe analyzing a project](public/Screenshot_20260622_143219.png)
+
+Test generation, execution, and results summary:
+
+![DjangoProbe test results](public/Screenshot_20260622_143259.png)
+
 ## Quick Start
 
 ### Installation
@@ -20,13 +30,13 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 **Linux / macOS (one line)** — bash/zsh:
 
 ```bash
-git clone https://github.com/yourusername/djangoprobe.git && cd djangoprobe && python3 -m venv env && source env/bin/activate && pip install -r requirements.txt && pip install -e . && cp .env.example .env
+git clone https://github.com/charitraa/DjangoProbe.git && cd DjangoProbe && python3 -m venv env && source env/bin/activate && pip install -r requirements.txt && pip install -e . && cp .env.example .env
 ```
 
 **Windows (one line)** — PowerShell:
 
 ```powershell
-git clone https://github.com/yourusername/djangoprobe.git; cd djangoprobe; python -m venv env; .\env\Scripts\Activate.ps1; pip install -r requirements.txt; pip install -e .; copy .env.example .env
+git clone https://github.com/charitraa/DjangoProbe.git; cd DjangoProbe; python -m venv env; .\env\Scripts\Activate.ps1; pip install -r requirements.txt; pip install -e .; copy .env.example .env
 ```
 
 Then open `.env` and add at least one provider API key (see [Configuration](#configuration)).
@@ -36,8 +46,8 @@ Then open `.env` and add at least one provider API key (see [Configuration](#con
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/djangoprobe.git
-cd djangoprobe
+git clone https://github.com/charitraa/DjangoProbe.git
+cd DjangoProbe
 
 # Create virtual environment
 python -m venv env
@@ -74,7 +84,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-2.0-flash
 ANTHROPIC_API_KEY=your_key_here
-ANTHROPIC_MODEL=claude-3.5-sonnet
+ANTHROPIC_MODEL=claude-sonnet-4-6
 TOGETHER_API_KEY=your_key_here
 TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
 ```
@@ -129,7 +139,7 @@ djangoprobe git@github.com:username/repository.git
 - More comprehensive test coverage
 - App-specific test generation
 
-For detailed information about the analysis process, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md).
+For details on the analysis and generation pipeline, see the [How It Works](#how-it-works) section below.
 
 ## How It Works
 
@@ -202,8 +212,9 @@ DjangoProbe/
 │   └── MULTI_PROVIDER_SETUP.md   # Multi-provider setup guide
 ├── examples/
 │   └── enhanced_mode_demo.py      # Analysis demo
-├── IMPLEMENTATION_SUMMARY.md      # Implementation details
+├── .env.example                  # Configuration template
 ├── CLAUDE.md                     # Claude Code instructions
+├── LICENSE                       # MIT license
 └── requirements.txt               # Python dependencies
 ```
 
@@ -468,8 +479,8 @@ MIT License - see LICENSE file for details
 ## Support
 
 For issues, questions, or contributions:
-- GitHub Issues: https://github.com/yourusername/djangoprobe/issues
-- Documentation: See [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for implementation details
+- GitHub Issues: https://github.com/charitraa/DjangoProbe/issues
+- Multi-provider setup: See [docs/MULTI_PROVIDER_SETUP.md](docs/MULTI_PROVIDER_SETUP.md)
 
 ## Roadmap
 

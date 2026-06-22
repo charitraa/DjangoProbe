@@ -66,7 +66,7 @@ class ProviderManager:
             "nvidia_model": os.environ.get("NVIDIA_MODEL", "qwen/qwen3.5-122b-a10b"),
             "groq_model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
             "together_model": os.environ.get("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
-            "anthropic_model": os.environ.get("ANTHROPIC_MODEL", "claude-3.5-sonnet"),
+            "anthropic_model": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL", ""),
             "max_retries": int(os.environ.get("AI_MAX_RETRIES", "3")),

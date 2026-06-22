@@ -25,7 +25,7 @@ their API key is configured in the environment.
 
 ### 4. Anthropic (remote API)
 - **Setup**: Get an API key from [console.anthropic.com](https://console.anthropic.com/)
-- **Models**: `claude-3.5-sonnet` (default); supports a custom `ANTHROPIC_BASE_URL`
+- **Models**: `claude-sonnet-4-6` (default); supports a custom `ANTHROPIC_BASE_URL`
 
 ### 5. Together AI (remote API)
 - **Cost**: Free tier
@@ -72,7 +72,7 @@ NVIDIA_MODEL=qwen/qwen3.5-122b-a10b
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1   # optional; any OpenAI-compatible endpoint
 GROQ_MODEL=llama-3.3-70b-versatile
 GEMINI_MODEL=gemini-2.0-flash
-ANTHROPIC_MODEL=claude-3.5-sonnet
+ANTHROPIC_MODEL=claude-sonnet-4-6
 TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
 
 # Retry / fallback

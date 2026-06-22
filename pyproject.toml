@@ -4,14 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "djangoprobe"
-version = "0.1.0"
-description = "AI-powered Django API test runner"
+version = "2.0.0"
+description = "AI-powered Django API test runner that discovers endpoints, generates TestCases with an LLM, and runs them in an isolated venv."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "charitra shrestha" }]
+keywords = ["django", "rest-framework", "testing", "ai", "llm", "api", "test-generation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Framework :: Django",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "typer",
     "rich",
     "gitpython",
+    "python-dotenv",
+    "openai",
+    "anthropic",
 ]
+
+[project.urls]
+Homepage = "https://github.com/charitraa/DjangoProbe"
+Repository = "https://github.com/charitraa/DjangoProbe"
+Issues = "https://github.com/charitraa/DjangoProbe/issues"
 
 [project.scripts]
 djangoprobe = "ai_tester.cli:app"

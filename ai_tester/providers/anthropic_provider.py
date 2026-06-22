@@ -15,30 +15,30 @@ class AnthropicProvider(BaseProvider):
     Anthropic provider using Claude models.
 
     Models:
-    - claude-3.5-sonnet: Best quality, fast
-    - claude-3.5-haiku: Lightweight, very fast
-    - claude-3-opus: Highest quality, slower
+    - claude-sonnet-4-6: Best balance of quality and speed
+    - claude-haiku-4-5: Lightweight, very fast
+    - claude-opus-4-8: Highest quality, slower
 
     Supports custom base URLs for proxy services.
     """
 
-    DEFAULT_MODEL = "claude-3.5-sonnet"
+    DEFAULT_MODEL = "claude-sonnet-4-6"
 
     # Available models with characteristics
     MODELS = {
-        "claude-3.5-sonnet": {
+        "claude-sonnet-4-6": {
             "quality": "excellent",
             "speed": "fast",
             "rate_limit": "good",
             "description": "Best balance of quality and speed"
         },
-        "claude-3.5-haiku": {
+        "claude-haiku-4-5": {
             "quality": "good",
             "speed": "very_fast",
             "rate_limit": "high",
             "description": "Lightweight, very fast"
         },
-        "claude-3-opus": {
+        "claude-opus-4-8": {
             "quality": "highest",
             "speed": "slower",
             "rate_limit": "lower",

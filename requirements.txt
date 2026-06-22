@@ -8,7 +8,6 @@ charset-normalizer==3.4.6
 click==8.3.1
 cryptography==46.0.5
 distro==1.9.0
--e git+ssh://git@github.com/charitraa/DjangoProbe.git@921a635db197929f96a760ca60bd885024a76f1d#egg=djangoprobe
 gitdb==4.0.12
 GitPython==3.1.46
 google-ai-generativelanguage==0.6.15

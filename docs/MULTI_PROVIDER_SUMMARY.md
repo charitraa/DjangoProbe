@@ -13,7 +13,7 @@ to the next on any error or rate limit (a provider is skipped after 3 failures).
 | Provider | File | Key | Default model |
 |----------|------|-----|---------------|
 | NVIDIA NIM (1st priority) | `nvidia_provider.py` | `NVIDIA_API_KEY` | `qwen/qwen3.5-122b-a10b` |
-| Anthropic | `anthropic_provider.py` | `ANTHROPIC_API_KEY` | `claude-3.5-sonnet` |
+| Anthropic | `anthropic_provider.py` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | Groq | `groq_provider.py` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
 | Gemini | `gemini_provider.py` | `GEMINI_API_KEY` | `gemini-2.0-flash` |
 | Together AI | `together_provider.py` | `TOGETHER_API_KEY` | `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` |
