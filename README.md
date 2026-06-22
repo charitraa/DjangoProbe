@@ -17,6 +17,23 @@ AI-powered Django API test runner that automatically discovers endpoints, genera
 
 ### Installation
 
+**Linux / macOS (one line)** — bash/zsh:
+
+```bash
+git clone https://github.com/yourusername/djangoprobe.git && cd djangoprobe && python3 -m venv env && source env/bin/activate && pip install -r requirements.txt && pip install -e . && cp .env.example .env
+```
+
+**Windows (one line)** — PowerShell:
+
+```powershell
+git clone https://github.com/yourusername/djangoprobe.git; cd djangoprobe; python -m venv env; .\env\Scripts\Activate.ps1; pip install -r requirements.txt; pip install -e .; copy .env.example .env
+```
+
+Then open `.env` and add at least one provider API key (see [Configuration](#configuration)).
+
+<details>
+<summary>Step-by-step (if you prefer)</summary>
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/djangoprobe.git
@@ -24,12 +41,17 @@ cd djangoprobe
 
 # Create virtual environment
 python -m venv env
-source env/bin/activate  # On Windows: env\Scripts\activate
+source env/bin/activate  # On Windows: .\env\Scripts\Activate.ps1
 
 # Install dependencies
 pip install -r requirements.txt
 pip install -e .
+
+# Create your config from the template
+cp .env.example .env       # On Windows: copy .env.example .env
 ```
+
+</details>
 
 ### Configuration
 
