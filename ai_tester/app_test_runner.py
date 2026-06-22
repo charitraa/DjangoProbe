@@ -216,113 +216,190 @@ class AppTestRunner:
                 return candidate
         return None
 
+    def _app_name_from_module(self, module_info: str, resolved_app_name: str = "") -> str:
+        """
+        Derive the real app name from a test's dotted module path, e.g.
+        `apps.user.tests.AppTests.test_x` -> "user",
+        `tests.generated.test_user.UserAppTestCase.test_x` -> "user".
+        """
+        parts = module_info.split(".")
+        app_name = ""
+
+        # Known non-app parts to skip
+        skip_parts = {"tests", "test", "generated", "apps", "models", "views", "serializers", "urls"}
+        skip_prefixes = {"AppTests", "Test"}
+        skip_suffixes = {"tests", "TestCase"}
+
+        for part in parts:
+            if part in skip_parts:
+                continue
+            if any(part.startswith(p) for p in skip_prefixes):
+                continue
+            if any(part.endswith(s) for s in skip_suffixes):
+                continue
+            # `tests.generated.test_<app>.Class.method` — strip the generated-file prefix
+            # so we don't end up with `app_name = "test_enquiry"` (which then produces
+            # bogus URLs like `/api/test_enquiry/` in the report).
+            if part.startswith("test_") and len(part) > len("test_"):
+                app_name = part[len("test_"):]
+                break
+            app_name = part
+            break
+
+        if not app_name and "test_" in module_info:
+            for part in parts:
+                if part.startswith("test_") and part not in {"test_", "test"}:
+                    app_name = part[5:]
+                    break
+
+        if not app_name and resolved_app_name:
+            app_name = resolved_app_name
+
+        return app_name
+
+    def _parse_verbose_lines(self, output: str) -> list[tuple]:
+        """
+        Parse the per-test lines Django emits at --verbosity=2 (one per test,
+        passing tests included). Returns (test_name, module_info, status) tuples
+        where status is one of: ok, fail, error, skip.
+
+        Two shapes are handled:
+            test_x (mod.Class.test_x) ... ok
+            test_x (mod.Class.test_x)
+            <docstring> ... ok
+        """
+        lines = output.split("\n")
+        header_re = re.compile(r"^(test\w+)\s+\(([^)]+)\)(.*)$")
+        status_re = re.compile(
+            r"\.\.\.\s+(ok|FAIL|ERROR|skipped|expected failure|unexpected success)",
+            re.IGNORECASE,
+        )
+
+        parsed = []
+        for idx, line in enumerate(lines):
+            m = header_re.match(line.strip())
+            if not m:
+                continue
+            test_name   = m.group(1)
+            module_info = m.group(2)
+            sm = status_re.search(m.group(3))
+            # The "... ok" may land on the next line when a docstring is printed.
+            if not sm and idx + 1 < len(lines):
+                sm = status_re.search(lines[idx + 1])
+            if not sm:
+                continue
+            raw = sm.group(1).lower()
+            if raw.startswith("ok"):
+                status = "ok"
+            elif raw.startswith("fail") or raw == "unexpected success":
+                status = "fail"
+            elif raw.startswith("skip"):
+                status = "skip"
+            else:  # error, expected failure
+                status = "error"
+            parsed.append((test_name, module_info, status))
+        return parsed
+
+    def _resolve_url_methods(self, output: str, test_name: str, app_name: str) -> tuple:
+        """URL + HTTP methods for a test, from INFO request lines with a fallback."""
+        url, methods = self._extract_url_and_methods(output, test_name)
+        if not url:
+            url = self._url_from_test_name(test_name, app_name)
+        if not methods:
+            methods = self._method_from_test_name(test_name)
+        return url, methods
+
     def _parse_results(self, output: str, app_module: str = "", real_app_name: str = "") -> list[TestResult]:
         results = []
 
         # Use real_app_name if provided, otherwise extract from app_module
         resolved_app_name = real_app_name if real_app_name else app_module.split(".")[-1] if app_module else ""
 
-        # Pattern for Django test output: ERROR/FAIL: test_name (module.Class.test_name)
+        # Detailed error/fail blocks: ERROR/FAIL: test_name (module.Class.test_name)
         test_pattern = re.compile(
             r"^(ERROR|FAIL):\s+(test\w+)\s+\(([^)]+)\)\s*$",
             re.MULTILINE | re.IGNORECASE,
         )
+        # Pre-index error details by test name so we can attach them to the
+        # matching verbose line below.
+        error_details = {}
+        for match in test_pattern.finditer(output):
+            status_type = "FAILED" if match.group(1).upper() == "FAIL" else "ERROR"
+            tname = match.group(2)
+            err = self._extract_error(output, tname)
+            error_details[tname] = (
+                status_type, err,
+                self._extract_actual_code(err),
+                self._extract_expected_code(err),
+            )
 
-        # Pattern for passed tests from "Ran X tests" and "OK" or "FAILED" summary
+        # Preferred path: parse the per-test verbosity=2 lines so PASSED tests
+        # get their real name / module / URL instead of "passed_test" placeholders.
+        verbose = self._parse_verbose_lines(output)
+        if verbose:
+            for test_name, module_info, status in verbose:
+                app_name = self._app_name_from_module(module_info, resolved_app_name)
+                url, methods = self._resolve_url_methods(output, test_name, app_name)
+
+                if status == "ok":
+                    expected = self._expected_code_from_test(test_name)
+                    results.append(TestResult(
+                        endpoint = EndpointInfo(url, methods, test_name, False, app_name),
+                        status        = "PASSED",
+                        response_code = expected,
+                        expected_code = expected,
+                        error_message = None,
+                    ))
+                elif status == "skip":
+                    results.append(TestResult(
+                        endpoint = EndpointInfo(url, methods, test_name, False, app_name),
+                        status        = "SKIPPED",
+                        response_code = 0,
+                        expected_code = 0,
+                        error_message = None,
+                    ))
+                else:  # fail / error
+                    detail = error_details.get(test_name)
+                    if detail:
+                        status_type, err, actual_code, expected_code = detail
+                    else:
+                        status_type = "ERROR" if status == "error" else "FAILED"
+                        err = self._extract_error(output, test_name)
+                        actual_code = self._extract_actual_code(err)
+                        expected_code = self._extract_expected_code(err)
+                    results.append(TestResult(
+                        endpoint = EndpointInfo(url, methods, test_name, False, app_name),
+                        status        = status_type,
+                        response_code = actual_code,
+                        expected_code = expected_code,
+                        error_message = err,
+                    ))
+            return results
+
+        # Fallback path (verbosity < 2): only FAIL/ERROR tests are named in the
+        # output, so report those in detail and count the rest as passed.
+        for tname, (status_type, err, actual_code, expected_code) in error_details.items():
+            app_name = self._app_name_from_module(
+                next(m.group(3) for m in test_pattern.finditer(output) if m.group(2) == tname),
+                resolved_app_name,
+            )
+            url, methods = self._resolve_url_methods(output, tname, app_name)
+            results.append(TestResult(
+                endpoint = EndpointInfo(url, methods, tname, False, app_name),
+                status        = status_type,
+                response_code = actual_code,
+                expected_code = expected_code,
+                error_message = err,
+            ))
+
         summary_pattern = re.compile(
             r"^Ran\s+(\d+)\s+test.*?\n\s*(OK|FAILED|ERROR)",
             re.MULTILINE | re.IGNORECASE,
         )
-
-        # Find all ERROR and FAIL test entries
-        for match in test_pattern.finditer(output):
-            status_type = match.group(1).upper()  # ERROR or FAIL
-            # Django prints "FAIL:" but the report/summary count "FAILED".
-            if status_type == "FAIL":
-                status_type = "FAILED"
-            test_name   = match.group(2)
-            module_info = match.group(3)
-
-            # Parse module info: apps.user.tests.AppTests.test_get_user_details
-            # or: tests.generated.test_user.UserAppTestCase.test_method
-            parts = module_info.split(".")
-            app_name = ""
-            
-            # Strategy: Find the app name by looking for known patterns
-            # Known non-app parts to skip
-            skip_parts = {"tests", "test", "generated", "apps", "models", "views", "serializers", "urls"}
-            skip_prefixes = {"AppTests", "Test"}
-            skip_suffixes = {"tests", "TestCase"}
-
-            for part in parts:
-                # Skip parts that are definitely not app names
-                if part in skip_parts:
-                    continue
-                if any(part.startswith(p) for p in skip_prefixes):
-                    continue
-                if any(part.endswith(s) for s in skip_suffixes):
-                    continue
-                # `tests.generated.test_<app>.Class.method` — strip the generated-file prefix
-                # so we don't end up with `app_name = "test_enquiry"` (which then produces
-                # bogus URLs like `/api/test_enquiry/` in the report).
-                if part.startswith("test_") and len(part) > len("test_"):
-                    app_name = part[len("test_"):]
-                    break
-                # This is likely an app name
-                app_name = part
-                break
-            
-            # If we still don't have an app name, try extracting from module info
-            if not app_name and "test_" in module_info:
-                # Extract from test_ prefix: tests.generated.test_user -> "user"
-                for part in parts:
-                    if part.startswith("test_") and part not in {"test_", "test"}:
-                        app_name = part[5:]  # Remove "test_" prefix
-                        break
-            
-            # Use resolved real app_name if extraction failed
-            if not app_name and resolved_app_name:
-                app_name = resolved_app_name
-
-            # Extract error details
-            error_msg = self._extract_error(output, test_name)
-            actual_code = self._extract_actual_code(error_msg)
-            expected_code = self._extract_expected_code(error_msg)
-
-            # Extract URL and HTTP method from test output (INFO lines)
-            url, methods = self._extract_url_and_methods(output, test_name)
-
-            # Fallback: extract URL/methods from test name if INFO lines not found
-            if not url or not methods:
-                fallback_url = self._url_from_test_name(test_name, app_name)
-                fallback_methods = self._method_from_test_name(test_name)
-                if not url:
-                    url = fallback_url
-                if not methods:
-                    methods = fallback_methods
-
-            results.append(TestResult(
-                endpoint = EndpointInfo(
-                    url_pattern   = url,
-                    http_methods  = methods,
-                    view_name     = test_name,
-                    requires_auth = False,
-                    app_name      = app_name,
-                ),
-                status        = status_type,
-                response_code = actual_code,
-                expected_code = expected_code,
-                error_message = error_msg,
-            ))
-
-        # Count passed tests from summary
         summary_match = summary_pattern.search(output)
         if summary_match:
             total_tests = int(summary_match.group(1))
-            failed_count = len(results)
-            passed_count = total_tests - failed_count
-
-            # Add placeholder results for passed tests
+            passed_count = total_tests - len(results)
             for i in range(passed_count):
                 results.append(TestResult(
                     endpoint = EndpointInfo(
